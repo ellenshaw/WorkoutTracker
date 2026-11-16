@@ -125,3 +125,71 @@ enum BodySpec {
         BodyPatch(host: "leg", muscle: .calves, y0: 0.5, y1: 1.2, t0: 182, t1: 248, amp: 0.09, peak: 0.62, mirrored: true),
     ]
 }
+
+// MARK: - Male / female
+
+enum BodyType: String, CaseIterable, Identifiable {
+    case male, female
+
+    var id: String { rawValue }
+    var title: String { self == .male ? "Male" : "Female" }
+}
+
+extension BodySpec {
+    static func tubes(for type: BodyType) -> [BodyTube] {
+        guard type == .female else { return tubes }
+        return tubes.map { tube in
+            BodyTube(name: tube.name, mirrored: tube.mirrored, keys: tube.keys.map { adaptForFemale($0, tube: tube.name) })
+        }
+    }
+
+    static func patches(for type: BodyType) -> [BodyPatch] {
+        guard type == .female else { return patches }
+        return patches.map { patch in
+            let factor: Float
+            switch patch.muscle {
+            case .chest: factor = 1.15
+            case .glutes: factor = 1.1
+            default: factor = 0.78
+            }
+            return BodyPatch(host: patch.host, muscle: patch.muscle, y0: patch.y0, y1: patch.y1,
+                             t0: patch.t0, t1: patch.t1, amp: patch.amp * factor, peak: patch.peak,
+                             mirrored: patch.mirrored)
+        }
+    }
+
+    // Female proportions: narrower shoulders and waist, wider hips, slimmer limbs.
+    private static let torsoWidth: [(Float, Float)] = [(2.5, 1.08), (3.1, 1.13), (3.9, 0.84), (4.7, 0.88), (5.5, 0.86), (6.1, 0.9)]
+    private static let torsoDepth: [(Float, Float)] = [(2.5, 0.95), (3.1, 1.0), (3.9, 0.88), (4.6, 0.98), (5.1, 1.06), (5.6, 0.9), (6.1, 0.9)]
+
+    private static func interpolate(_ points: [(Float, Float)], at y: Float) -> Float {
+        guard let first = points.first, let last = points.last else { return 1 }
+        if y <= first.0 { return first.1 }
+        for i in 0..<(points.count - 1) {
+            let (y0, v0) = points[i]
+            let (y1, v1) = points[i + 1]
+            if y <= y1 { return v0 + (v1 - v0) * (y - y0) / (y1 - y0) }
+        }
+        return last.1
+    }
+
+    private static func adaptForFemale(_ key: BodyKey, tube: String) -> BodyKey {
+        var cx = key.cx, rx = key.rx, rz = key.rz
+        switch tube {
+        case "torso":
+            rx *= interpolate(torsoWidth, at: key.y)
+            rz *= interpolate(torsoDepth, at: key.y)
+        case "upperArm", "forearm", "hand":
+            cx *= 0.9; rx *= 0.82; rz *= 0.82
+        case "leg":
+            rx *= 0.95; rz *= 0.95
+        case "head", "neck":
+            rx *= 0.93; rz *= 0.93
+        case "foot":
+            rx *= 0.9; rz *= 0.9
+        default:
+            break
+        }
+        return BodyKey(y: key.y, cx: cx, cz: key.cz, rx: rx, rz: rz)
+    }
+}

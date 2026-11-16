@@ -2,36 +2,45 @@
 //  BodyModelView.swift
 //  WorkoutTracker
 //
-//  A 3D human figure built from SceneKit primitives. Each muscle group is its own set of
-//  nodes, tinted yellow / orange / red depending on how hard it was worked.
+//  A holographic 3D human: a dark translucent body, glowing contour lines and a soft rim
+//  glow. Worked muscles light up yellow / orange / red in the same hologram style.
 //
 
 import SwiftUI
 import SceneKit
 
+/// Colors shared by the 3D scene and the card around it.
+enum Hologram {
+    static let background = UIColor(red: 0.03, green: 0.05, blue: 0.10, alpha: 1)
+    static let bodyFill = UIColor(red: 0.02, green: 0.08, blue: 0.18, alpha: 1)
+    static let muscleFill = UIColor(red: 0.04, green: 0.13, blue: 0.27, alpha: 1)
+    static let bodyLine = UIColor(red: 0.22, green: 0.62, blue: 1.0, alpha: 1)
+    static let muscleLine = UIColor(red: 0.30, green: 0.68, blue: 1.0, alpha: 1)
+    static let glow = UIColor(red: 0.25, green: 0.60, blue: 1.0, alpha: 1)
+}
+
 struct BodyModelView: UIViewRepresentable {
     var heat: [MuscleGroup: HeatLevel]
+    var bodyType: BodyType
     /// Increment to spin the figure to its other side.
     var flipToken: Int
-
-    @Environment(\.colorScheme) private var colorScheme
 
     func makeCoordinator() -> Coordinator { Coordinator() }
 
     func makeUIView(context: Context) -> SCNView {
         let view = SCNView()
         view.scene = context.coordinator.scene
-        view.backgroundColor = .clear
+        view.backgroundColor = Hologram.background
         view.antialiasingMode = .multisampling4X
         view.allowsCameraControl = false
         let pan = UIPanGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.handlePan(_:)))
         view.addGestureRecognizer(pan)
-        context.coordinator.apply(heat: heat, isDark: colorScheme == .dark)
+        context.coordinator.update(bodyType: bodyType, heat: heat)
         return view
     }
 
     func updateUIView(_ view: SCNView, context: Context) {
-        context.coordinator.apply(heat: heat, isDark: colorScheme == .dark)
+        context.coordinator.update(bodyType: bodyType, heat: heat)
         context.coordinator.flip(ifTokenChanged: flipToken)
     }
 
@@ -41,10 +50,10 @@ struct BodyModelView: UIViewRepresentable {
         let scene = SCNScene()
 
         private let figure = SCNNode()
-        private var muscleMaterials: [MuscleGroup: [SCNMaterial]] = [:]
-        private var baseMaterials: [SCNMaterial] = []
+        private var muscleFills: [MuscleGroup: [SCNMaterial]] = [:]
+        private var muscleLines: [MuscleGroup: [SCNMaterial]] = [:]
+        private var currentBodyType: BodyType?
         private var lastHeat: [MuscleGroup: HeatLevel]?
-        private var lastDark: Bool?
         private var lastFlipToken = 0
 
         override init() {
@@ -54,36 +63,33 @@ struct BodyModelView: UIViewRepresentable {
 
         // MARK: Updating
 
-        func apply(heat: [MuscleGroup: HeatLevel], isDark: Bool) {
-            guard heat != lastHeat || isDark != lastDark else { return }
+        func update(bodyType: BodyType, heat: [MuscleGroup: HeatLevel]) {
+            if bodyType != currentBodyType {
+                rebuildFigure(for: bodyType)
+            }
+            apply(heat: heat)
+        }
+
+        private func apply(heat: [MuscleGroup: HeatLevel]) {
+            guard heat != lastHeat else { return }
             let animated = lastHeat != nil
             lastHeat = heat
-            lastDark = isDark
-
-            let baseColor = isDark
-                ? UIColor(red: 0.20, green: 0.22, blue: 0.27, alpha: 1)
-                : UIColor(red: 0.80, green: 0.82, blue: 0.86, alpha: 1)
-            let idleColor = isDark
-                ? UIColor(red: 0.32, green: 0.35, blue: 0.43, alpha: 1)
-                : UIColor(red: 0.63, green: 0.67, blue: 0.74, alpha: 1)
 
             SCNTransaction.begin()
             SCNTransaction.animationDuration = animated ? 0.45 : 0
-            for material in baseMaterials {
-                material.diffuse.contents = baseColor
-            }
-            for (muscle, materials) in muscleMaterials {
+            for muscle in MuscleGroup.allCases {
                 let level = heat[muscle] ?? HeatLevel.none
-                for material in materials {
-                    if level == .none {
-                        material.diffuse.contents = idleColor
-                        material.emission.contents = UIColor.black
-                    } else {
-                        material.diffuse.contents = level.uiColor
-                        // A slight glow so heat reads clearly, especially in dark mode.
-                        material.emission.contents = level.uiColor.withAlphaComponent(isDark ? 0.35 : 0.15)
-                    }
+                let line: UIColor
+                let fill: UIColor
+                if level == HeatLevel.none {
+                    line = Hologram.muscleLine
+                    fill = Hologram.muscleFill
+                } else {
+                    line = level.uiColor
+                    fill = level.uiColor.withAlphaComponent(1).scaled(by: 0.32)
                 }
+                muscleLines[muscle]?.forEach { $0.diffuse.contents = line }
+                muscleFills[muscle]?.forEach { $0.diffuse.contents = fill }
             }
             SCNTransaction.commit()
         }
@@ -112,103 +118,119 @@ struct BodyModelView: UIViewRepresentable {
             gesture.setTranslation(.zero, in: gesture.view)
         }
 
-        // MARK: Building the figure
+        // MARK: Scene
 
         private func buildScene() {
-            scene.background.contents = UIColor.clear
+            scene.background.contents = Hologram.background
             scene.rootNode.addChildNode(figure)
-            buildFigure()
 
             let camera = SCNNode()
             camera.camera = SCNCamera()
             camera.camera?.fieldOfView = 30
+            // HDR + bloom is what makes the thin lines glow.
+            camera.camera?.wantsHDR = true
+            camera.camera?.wantsExposureAdaptation = false
+            camera.camera?.bloomIntensity = 1.1
+            camera.camera?.bloomThreshold = 0.35
+            camera.camera?.bloomBlurRadius = 9
             camera.position = SCNVector3(0, 3.5, 16)
             scene.rootNode.addChildNode(camera)
 
-            let ambient = SCNNode()
-            ambient.light = SCNLight()
-            ambient.light?.type = .ambient
-            ambient.light?.intensity = 550
-            scene.rootNode.addChildNode(ambient)
-
-            let key = SCNNode()
-            key.light = SCNLight()
-            key.light?.type = .directional
-            key.light?.intensity = 900
-            key.eulerAngles = SCNVector3(-0.5, 0.5, 0)
-            scene.rootNode.addChildNode(key)
-
-            let fill = SCNNode()
-            fill.light = SCNLight()
-            fill.light?.type = .directional
-            fill.light?.intensity = 400
-            fill.eulerAngles = SCNVector3(-0.2, -0.7, 0)
-            scene.rootNode.addChildNode(fill)
-        }
-
-        private func addPart(_ geometry: SCNGeometry, muscle: MuscleGroup?) {
-            let material = SCNMaterial()
-            material.lightingModel = .blinn
-            material.diffuse.contents = UIColor.gray
-            material.specular.contents = UIColor(white: 0.22, alpha: 1)
-            material.shininess = 0.35
-            geometry.materials = [material]
-
-            if let muscle {
-                muscleMaterials[muscle, default: []].append(material)
-            } else {
-                baseMaterials.append(material)
-            }
-            figure.addChildNode(SCNNode(geometry: geometry))
-        }
-
-        /// Front of the figure faces +z (toward the camera). Feet at y = 0, head top at y ≈ 7.
-        private func buildFigure() {
-            var keysByName: [String: [BodyKey]] = [:]
-
-            for tube in BodySpec.tubes {
-                keysByName[tube.name] = tube.keys
-                for side in (tube.mirrored ? [Float(-1), 1] : [Float(1)]) {
-                    addPart(BodyMesher.tube(tube.keys, side: side), muscle: nil)
-                }
-            }
-
-            for patch in BodySpec.patches {
-                guard let keys = keysByName[patch.host] else { continue }
-                for side in (patch.mirrored ? [Float(-1), 1] : [Float(1)]) {
-                    addPart(BodyMesher.patch(keys, side: side, spec: patch), muscle: patch.muscle)
-                }
-            }
-
-            // A soft disc under the feet to ground the figure.
+            // A faint glowing disc under the feet.
             let floor = SCNCylinder(radius: 1.9, height: 0.02)
-            let floorMaterial = SCNMaterial()
-            floorMaterial.lightingModel = .constant
-            floorMaterial.diffuse.contents = UIColor(red: 0.30, green: 0.56, blue: 1.0, alpha: 1)
-            floorMaterial.transparency = 0.16
-            floor.materials = [floorMaterial]
+            floor.materials = [constantMaterial(Hologram.glow, alpha: 0.18, additive: true)]
             let floorNode = SCNNode(geometry: floor)
             floorNode.position = SCNVector3(0, -0.02, 0)
             scene.rootNode.addChildNode(floorNode)
         }
+
+        private func constantMaterial(_ color: UIColor, alpha: CGFloat = 1, additive: Bool = false) -> SCNMaterial {
+            let material = SCNMaterial()
+            material.lightingModel = .constant
+            material.diffuse.contents = color
+            material.transparency = alpha
+            if additive {
+                material.blendMode = .add
+                material.writesToDepthBuffer = false
+            }
+            return material
+        }
+
+        private func rebuildFigure(for type: BodyType) {
+            currentBodyType = type
+            lastHeat = nil
+            muscleFills = [:]
+            muscleLines = [:]
+            figure.childNodes.forEach { $0.removeFromParentNode() }
+
+            var tubeKeys: [String: [BodyKey]] = [:]
+
+            for tube in BodySpec.tubes(for: type) {
+                tubeKeys[tube.name] = tube.keys
+                for side in (tube.mirrored ? [Float(-1), 1] : [Float(1)]) {
+                    let grid = BodyMesher.tubeGrid(tube.keys, side: side)
+
+                    // Dark translucent body.
+                    let fill = SCNNode(geometry: BodyMesher.tubeMesh(grid))
+                    fill.geometry?.materials = [constantMaterial(Hologram.bodyFill)]
+                    figure.addChildNode(fill)
+
+                    // Glowing contour lines.
+                    let lines = SCNNode(geometry: BodyMesher.contours(grid, wrap: true))
+                    lines.geometry?.materials = [constantMaterial(Hologram.bodyLine)]
+                    figure.addChildNode(lines)
+
+                    // Soft rim glow: an inflated shell seen only from behind its edges.
+                    let halo = SCNNode(geometry: BodyMesher.tubeMesh(grid, inflate: 0.07))
+                    let haloMaterial = constantMaterial(Hologram.glow, alpha: 0.16, additive: true)
+                    haloMaterial.cullMode = .front
+                    halo.geometry?.materials = [haloMaterial]
+                    halo.renderingOrder = 10
+                    figure.addChildNode(halo)
+                }
+            }
+
+            for patch in BodySpec.patches(for: type) {
+                guard let keys = tubeKeys[patch.host] else { continue }
+                for side in (patch.mirrored ? [Float(-1), 1] : [Float(1)]) {
+                    let grid = BodyMesher.patchGrid(keys, side: side, spec: patch)
+
+                    let fillMaterial = constantMaterial(Hologram.muscleFill)
+                    let fill = SCNNode(geometry: BodyMesher.patchMesh(grid))
+                    fill.geometry?.materials = [fillMaterial]
+                    figure.addChildNode(fill)
+
+                    let lineMaterial = constantMaterial(Hologram.muscleLine)
+                    let lines = SCNNode(geometry: BodyMesher.contours(grid, wrap: false))
+                    lines.geometry?.materials = [lineMaterial]
+                    figure.addChildNode(lines)
+
+                    muscleFills[patch.muscle, default: []].append(fillMaterial)
+                    muscleLines[patch.muscle, default: []].append(lineMaterial)
+                }
+            }
+        }
+    }
+}
+
+private extension UIColor {
+    /// Darkens a color toward black, keeping it fully opaque.
+    func scaled(by factor: CGFloat) -> UIColor {
+        var r: CGFloat = 0, g: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
+        getRed(&r, green: &g, blue: &b, alpha: &a)
+        return UIColor(red: r * factor, green: g * factor, blue: b * factor, alpha: 1)
     }
 }
 
 // MARK: - Card, legend and breakdown
 
-/// The 3D model on a themed backdrop, with a flip button and legend.
+/// The hologram on a dark backdrop, with a flip button and legend. Always dark so the glow reads
+/// in both light and dark mode.
 struct HeatBodyCard: View {
     let heat: [MuscleGroup: HeatLevel]
 
+    @AppStorage(StorageKey.bodyType) private var bodyTypeRaw = BodyType.male.rawValue
     @State private var flipToken = 0
-    @Environment(\.colorScheme) private var colorScheme
-
-    private var backdrop: LinearGradient {
-        let colors: [Color] = colorScheme == .dark
-            ? [Color(red: 0.07, green: 0.08, blue: 0.11), Color(red: 0.14, green: 0.16, blue: 0.22)]
-            : [Color(red: 0.95, green: 0.96, blue: 0.99), Color(red: 0.83, green: 0.87, blue: 0.94)]
-        return LinearGradient(colors: colors, startPoint: .top, endPoint: .bottom)
-    }
 
     private var accessibilitySummary: String {
         let worked = heat.sorted { $0.value > $1.value }
@@ -219,8 +241,8 @@ struct HeatBodyCard: View {
     var body: some View {
         VStack(spacing: 10) {
             ZStack(alignment: .topTrailing) {
-                BodyModelView(heat: heat, flipToken: flipToken)
-                    .frame(height: 420)
+                BodyModelView(heat: heat, bodyType: BodyType(rawValue: bodyTypeRaw) ?? .male, flipToken: flipToken)
+                    .frame(height: 440)
                     .accessibilityElement()
                     .accessibilityLabel("3D muscle heat map")
                     .accessibilityValue(accessibilitySummary)
@@ -242,8 +264,9 @@ struct HeatBodyCard: View {
             HeatLegend()
                 .padding(.bottom, 14)
         }
-        .background(backdrop)
+        .background(Color(Hologram.background))
         .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
+        .environment(\.colorScheme, .dark)
     }
 }
 

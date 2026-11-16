@@ -112,13 +112,30 @@ final class WorkoutTrackerTests: XCTestCase {
     }
 
     func testBodySpecIsConsistent() {
-        let tubes = Set(BodySpec.tubes.map(\.name))
-        XCTAssertTrue(BodySpec.patches.allSatisfy { tubes.contains($0.host) })
-        for tube in BodySpec.tubes {
-            let ys = tube.keys.map(\.y)
-            XCTAssertEqual(ys, ys.sorted(), "\(tube.name) keys must ascend in y")
+        for type in BodyType.allCases {
+            let tubes = BodySpec.tubes(for: type)
+            let names = Set(tubes.map(\.name))
+            let patches = BodySpec.patches(for: type)
+            XCTAssertTrue(patches.allSatisfy { names.contains($0.host) })
+            for tube in tubes {
+                let ys = tube.keys.map(\.y)
+                XCTAssertEqual(ys, ys.sorted(), "\(tube.name) keys must ascend in y")
+                XCTAssertTrue(tube.keys.allSatisfy { $0.rx > 0 && $0.rz > 0 })
+            }
+            XCTAssertEqual(Set(patches.map(\.muscle)), Set(MuscleGroup.allCases))
         }
-        XCTAssertEqual(Set(BodySpec.patches.map(\.muscle)), Set(MuscleGroup.allCases))
+    }
+
+    func testFemaleBodyIsNarrowerAtShouldersAndWiderAtHips() {
+        func torso(_ type: BodyType) -> [BodyKey] {
+            BodySpec.tubes(for: type).first { $0.name == "torso" }!.keys
+        }
+        let male = BodyMesher.profile(torso(.male), y: 5.2)
+        let female = BodyMesher.profile(torso(.female), y: 5.2)
+        XCTAssertLessThan(female.rx, male.rx)
+        let maleHip = BodyMesher.profile(torso(.male), y: 3.1)
+        let femaleHip = BodyMesher.profile(torso(.female), y: 3.1)
+        XCTAssertGreaterThan(femaleHip.rx, maleHip.rx)
     }
 
     func testDecodesWorkoutsSavedByOlderVersions() throws {

@@ -2,7 +2,8 @@
 //  BodyMesher.swift
 //  WorkoutTracker
 //
-//  Turns the shape data in BodySpec into smooth SceneKit meshes.
+//  Turns the shape data in BodySpec into SceneKit meshes: solid surfaces, plus the
+//  horizontal contour lines that give the hologram its scan-line look.
 //
 
 import SceneKit
@@ -10,6 +11,14 @@ import simd
 
 enum BodyMesher {
     typealias Vec = SIMD3<Float>
+
+    /// A grid of surface points (rows go up the body, columns go around or across it).
+    struct Grid {
+        var positions: [Vec]
+        var hints: [Vec]
+        let rows: Int
+        let cols: Int
+    }
 
     // MARK: Profile
 
@@ -54,10 +63,10 @@ enum BodyMesher {
         return (point, Vec(nx, 0, nz))
     }
 
-    // MARK: Meshes
+    // MARK: Grids
 
-    /// A closed, smooth body part (limb, torso, head...).
-    static func tube(_ keys: [BodyKey], side: Float, cols: Int = 32) -> SCNGeometry {
+    /// Rings around a body part, bottom to top.
+    static func tubeGrid(_ keys: [BodyKey], side: Float, cols: Int = 32) -> Grid {
         let y0 = keys[0].y
         let y1 = keys[keys.count - 1].y
         let rows = max(14, Int((y1 - y0) * 16))
@@ -73,6 +82,38 @@ enum BodyMesher {
                 hints.append(s.outward)
             }
         }
+        return Grid(positions: positions, hints: hints, rows: rows, cols: cols)
+    }
+
+    /// A muscle: a smooth bulge lying on a tube's surface that fades to zero at its edges.
+    static func patchGrid(_ keys: [BodyKey], side: Float, spec: BodyPatch, rows: Int = 16, cols: Int = 16) -> Grid {
+        let k = log(0.5) / log(spec.peak)
+        var positions: [Vec] = []
+        var hints: [Vec] = []
+        for r in 0..<rows {
+            let v = Float(r) / Float(rows - 1)
+            let y = spec.y0 + (spec.y1 - spec.y0) * v
+            for c in 0..<cols {
+                let u = Float(c) / Float(cols - 1)
+                let theta = (spec.t0 + (spec.t1 - spec.t0) * u) * Float.pi / 180
+                let shape = max(sin(Float.pi * u) * sin(Float.pi * pow(v, k)), 0)
+                let bulge = spec.amp * pow(shape, 0.7) + 0.004
+                let s = surface(keys, side: side, y: y, theta: theta, bulge: bulge)
+                positions.append(s.point)
+                hints.append(s.outward)
+            }
+        }
+        return Grid(positions: positions, hints: hints, rows: rows, cols: cols)
+    }
+
+    // MARK: Solid meshes
+
+    /// Closed surface for a tube. `inflate` pushes it outward, used for the soft glow shell.
+    static func tubeMesh(_ grid: Grid, inflate: Float = 0) -> SCNGeometry {
+        var positions = grid.positions.enumerated().map { $0.element + grid.hints[$0.offset] * inflate }
+        var hints = grid.hints
+        let rows = grid.rows
+        let cols = grid.cols
 
         var triangles: [(Int, Int, Int)] = []
         for r in 0..<(rows - 1) {
@@ -104,25 +145,9 @@ enum BodyMesher {
         return geometry(positions: positions, hints: hints, triangles: triangles)
     }
 
-    /// A muscle: a smooth bulge lying on a tube's surface that fades to zero at its edges.
-    static func patch(_ keys: [BodyKey], side: Float, spec: BodyPatch, rows: Int = 14, cols: Int = 16) -> SCNGeometry {
-        let k = log(0.5) / log(spec.peak)
-        var positions: [Vec] = []
-        var hints: [Vec] = []
-        for r in 0..<rows {
-            let v = Float(r) / Float(rows - 1)
-            let y = spec.y0 + (spec.y1 - spec.y0) * v
-            for c in 0..<cols {
-                let u = Float(c) / Float(cols - 1)
-                let theta = (spec.t0 + (spec.t1 - spec.t0) * u) * Float.pi / 180
-                let shape = max(sin(Float.pi * u) * sin(Float.pi * pow(v, k)), 0)
-                let bulge = spec.amp * pow(shape, 0.7) + 0.004
-                let s = surface(keys, side: side, y: y, theta: theta, bulge: bulge)
-                positions.append(s.point)
-                hints.append(s.outward)
-            }
-        }
-
+    static func patchMesh(_ grid: Grid) -> SCNGeometry {
+        let rows = grid.rows
+        let cols = grid.cols
         var triangles: [(Int, Int, Int)] = []
         for r in 0..<(rows - 1) {
             for c in 0..<(cols - 1) {
@@ -134,7 +159,27 @@ enum BodyMesher {
                 triangles.append((a, cc, d))
             }
         }
-        return geometry(positions: positions, hints: hints, triangles: triangles)
+        return geometry(positions: grid.positions, hints: grid.hints, triangles: triangles)
+    }
+
+    // MARK: Contour lines
+
+    /// One line per row, hovering just above the surface so it never sinks into the fill.
+    static func contours(_ grid: Grid, wrap: Bool, lift: Float = 0.006) -> SCNGeometry {
+        let points = grid.positions.enumerated().map { $0.element + grid.hints[$0.offset] * lift }
+        var indices: [Int32] = []
+        let segments = wrap ? grid.cols : grid.cols - 1
+        for r in 0..<grid.rows {
+            for c in 0..<segments {
+                let a = r * grid.cols + c
+                let b = r * grid.cols + (c + 1) % grid.cols
+                indices.append(Int32(a))
+                indices.append(Int32(b))
+            }
+        }
+        let vertexSource = SCNGeometrySource(vertices: points.map { SCNVector3($0.x, $0.y, $0.z) })
+        let element = SCNGeometryElement(indices: indices, primitiveType: .line)
+        return SCNGeometry(sources: [vertexSource], elements: [element])
     }
 
     // MARK: Geometry assembly

@@ -10,6 +10,7 @@ enum StorageKey {
     static let userName = "userName"
     static let appearance = "appearance"
     static let weightUnit = "weightUnit"
+    static let bodyType = "bodyType"
 }
 
 enum WeightUnit: String, CaseIterable, Identifiable {
