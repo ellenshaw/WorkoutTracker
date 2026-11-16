@@ -88,7 +88,7 @@ struct LogActivityView: View {
 
             LazyVGrid(columns: [GridItem(.adaptive(minimum: 100), spacing: 10)], spacing: 10) {
                 ForEach(category.activities) { preset in
-                    ActivityTile(title: preset.name, icon: preset.icon, tint: category.tint,
+                    ActivityTile(title: preset.name, icon: preset.symbol, tint: category.tint,
                                  selected: selectedActivity == preset.name) {
                         choose(preset)
                     }

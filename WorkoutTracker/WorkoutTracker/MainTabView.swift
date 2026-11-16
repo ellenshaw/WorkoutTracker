@@ -20,17 +20,18 @@ struct MainTabView: View {
     }
 }
 
-/// Combined heat map of the last 7 days.
+/// Combined heat map of recent workouts, fading over time.
 struct WeeklyBodyView: View {
     @EnvironmentObject private var store: WorkoutStore
+    @AppStorage(StorageKey.fadeHalfLifeDays) private var fadeHalfLife = 3.5
 
     var body: some View {
-        let heat = store.weeklyHeat()
+        let heat = store.currentHeat(halfLifeDays: fadeHalfLife)
 
         NavigationStack {
             ScrollView {
                 VStack(spacing: 20) {
-                    Text("Muscles you've worked over the last 7 days. More sessions and harder effort push a muscle toward red.")
+                    Text("Recent workouts glow, then fade from red back toward blue as your muscles recover. More sessions and harder effort push a muscle toward red.")
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
                         .frame(maxWidth: .infinity, alignment: .leading)

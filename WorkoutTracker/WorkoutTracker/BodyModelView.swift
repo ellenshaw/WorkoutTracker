@@ -26,6 +26,7 @@ struct MuscleLabel: Equatable, Identifiable {
 struct BodyModelView: UIViewRepresentable {
     var heat: [MuscleGroup: Double]
     var profile: BodyProfile
+    var style: HologramStyle
     /// Increment to spin the figure to its other side.
     var flipToken: Int
     /// A muscle the user tapped; it is labelled even if it wasn't worked.
@@ -35,12 +36,14 @@ struct BodyModelView: UIViewRepresentable {
 
     init(heat: [MuscleGroup: Double],
          profile: BodyProfile,
+         style: HologramStyle = .lines,
          flipToken: Int = 0,
          selected: MuscleGroup? = nil,
          onSelect: @escaping (MuscleGroup?) -> Void = { _ in },
          onLabels: @escaping ([MuscleLabel]) -> Void = { _ in }) {
         self.heat = heat
         self.profile = profile
+        self.style = style
         self.flipToken = flipToken
         self.selected = selected
         self.onSelect = onSelect
@@ -73,7 +76,7 @@ struct BodyModelView: UIViewRepresentable {
     private func sync(_ coordinator: Coordinator) {
         coordinator.onSelect = onSelect
         coordinator.onLabels = onLabels
-        coordinator.update(profile: profile, heat: heat, selected: selected)
+        coordinator.update(profile: profile, style: style, heat: heat, selected: selected)
     }
 
     // MARK: - Coordinator
@@ -102,6 +105,7 @@ struct BodyModelView: UIViewRepresentable {
         private var lineElement: SCNGeometryElement?
 
         private var currentProfile: BodyProfile?
+        private var currentStyle: HologramStyle?
         private var buildGeneration = 0
         private var wantedHeat: [MuscleGroup: Double] = [:]
         private var shownHeat: [MuscleGroup: Double]?
@@ -120,7 +124,7 @@ struct BodyModelView: UIViewRepresentable {
 
         // MARK: Updating
 
-        func update(profile: BodyProfile, heat: [MuscleGroup: Double], selected: MuscleGroup?) {
+        func update(profile: BodyProfile, style: HologramStyle, heat: [MuscleGroup: Double], selected: MuscleGroup?) {
             wantedHeat = heat
 
             labelLock.lock()
@@ -129,8 +133,8 @@ struct BodyModelView: UIViewRepresentable {
             labelTargets = targets
             labelLock.unlock()
 
-            if profile != currentProfile {
-                loadBody(profile)
+            if profile != currentProfile || style != currentStyle {
+                loadBody(profile, style: style)
             } else {
                 applyHeat()
             }
@@ -336,15 +340,16 @@ struct BodyModelView: UIViewRepresentable {
 
         /// Reshaping the body and building its lines takes a moment, so it happens off the main
         /// thread. The old body stays on screen until the new one is ready.
-        private func loadBody(_ profile: BodyProfile) {
+        private func loadBody(_ profile: BodyProfile, style: HologramStyle) {
             currentProfile = profile
+            currentStyle = style
             buildGeneration += 1
             let generation = buildGeneration
 
             DispatchQueue.global(qos: .userInitiated).async { [weak self] in
                 guard let base = BodyAsset.loadBase() else { return }
                 let mesh = BodyAsset.morph(base, profile: profile)
-                let lines = BodyAsset.lines(for: mesh)
+                let lines = BodyAsset.lines(for: mesh, style: style)
                 let anchors = BodyAsset.anchors(for: mesh)
 
                 DispatchQueue.main.async {
@@ -400,6 +405,7 @@ struct HeatBodyCard: View {
     @AppStorage(StorageKey.bodyAge) private var age = 28
     @AppStorage(StorageKey.bodyWeightKg) private var weightKg = 70.0
     @AppStorage(StorageKey.bodyHeightCm) private var heightCm = 172.0
+    @AppStorage(StorageKey.hologramStyle) private var styleRaw = HologramStyle.lines.rawValue
 
     @State private var flipToken = 0
     @State private var showingProfile = false
@@ -422,6 +428,7 @@ struct HeatBodyCard: View {
                 BodyModelView(
                     heat: heat,
                     profile: profile,
+                    style: HologramStyle(rawValue: styleRaw) ?? .lines,
                     flipToken: flipToken,
                     selected: selected,
                     onSelect: { tapped in

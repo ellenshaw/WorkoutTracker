@@ -33,7 +33,7 @@ final class WorkoutTrackerTests: XCTestCase {
     func testSingleWorkoutLandsWhereExpected() {
         let now = Date()
         let w = workout(minutes: 45, muscles: [.chest: 1.0, .calves: 0.35], now: now)
-        let heat = HeatCalculator.weeklyHeat(workouts: [w], now: now)
+        let heat = HeatCalculator.recoveryHeat(workouts: [w], now: now)
         XCTAssertEqual(heat[.chest] ?? 0, 1.0 / 1.2, accuracy: 0.001)
         XCTAssertEqual(heat[.calves] ?? 0, 0.35 / 1.2, accuracy: 0.001)
         XCTAssertNil(heat[.quads])
@@ -43,18 +43,38 @@ final class WorkoutTrackerTests: XCTestCase {
         let now = Date()
         let a = workout(minutes: 45, muscles: [.biceps: 0.35], now: now)
         let b = workout(minutes: 45, daysAgo: 2, muscles: [.biceps: 0.35], now: now)
-        let one = HeatCalculator.weeklyHeat(workouts: [a], now: now)[.biceps] ?? 0
-        let two = HeatCalculator.weeklyHeat(workouts: [a, b], now: now)[.biceps] ?? 0
+        let one = HeatCalculator.recoveryHeat(workouts: [a], now: now)[.biceps] ?? 0
+        let two = HeatCalculator.recoveryHeat(workouts: [a, b], now: now)[.biceps] ?? 0
         XCTAssertGreaterThan(two, one)
 
         let many = (0..<6).map { workout(minutes: 60, daysAgo: $0, muscles: [.biceps: 1.0], now: now) }
-        XCTAssertEqual(HeatCalculator.weeklyHeat(workouts: many, now: now)[.biceps], 1.0)
+        XCTAssertEqual(HeatCalculator.recoveryHeat(workouts: many, now: now)[.biceps], 1.0)
     }
 
-    func testOldWorkoutsAreIgnored() {
+    func testHeatFadesGraduallyInsteadOfDisappearing() {
         let now = Date()
-        let old = workout(minutes: 60, daysAgo: 10, muscles: [.lats: 1.0], now: now)
-        XCTAssertTrue(HeatCalculator.weeklyHeat(workouts: [old], now: now).isEmpty)
+        func heat(afterDays days: Int) -> Double {
+            let w = workout(minutes: 45, daysAgo: days, muscles: [.lats: 1.0], now: now)
+            return HeatCalculator.recoveryHeat(workouts: [w], now: now)[.lats] ?? 0
+        }
+        let fresh = heat(afterDays: 0)
+        let three = heat(afterDays: 3)
+        let week = heat(afterDays: 7)
+        XCTAssertGreaterThan(fresh, three)
+        XCTAssertGreaterThan(three, week)
+        XCTAssertGreaterThan(week, 0, "a week-old workout should be faded, not gone")
+        XCTAssertEqual(three / fresh, pow(0.5, 3 / 3.5), accuracy: 0.001)
+
+        // A slower fade setting keeps more color.
+        let w = workout(minutes: 45, daysAgo: 7, muscles: [.lats: 1.0], now: now)
+        let slow = HeatCalculator.recoveryHeat(workouts: [w], now: now, halfLifeDays: 6)[.lats] ?? 0
+        XCTAssertGreaterThan(slow, week)
+    }
+
+    func testVeryOldWorkoutsAreIgnored() {
+        let now = Date()
+        let old = workout(minutes: 60, daysAgo: 30, muscles: [.lats: 1.0], now: now)
+        XCTAssertTrue(HeatCalculator.recoveryHeat(workouts: [old], now: now).isEmpty)
     }
 
     func testHeatLevelCycleAndIntensity() {
@@ -283,5 +303,91 @@ final class WorkoutTrackerTests: XCTestCase {
             .map { mesh.positions[$0].z }
         XCTAssertFalse(chestFront.isEmpty)
         XCTAssertGreaterThan(chestFront.max() ?? 0, 0.3)
+    }
+
+    // MARK: Records, units, activities
+
+    @MainActor
+    func testPersonalRecords() {
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("\(UUID().uuidString).json")
+        defer {
+            for suffix in ["", "-exercises", "-records"] {
+                try? FileManager.default.removeItem(at: url.deletingLastPathComponent()
+                    .appendingPathComponent(url.deletingPathExtension().lastPathComponent + suffix + ".json"))
+            }
+        }
+        let store = WorkoutStore(fileURL: url)
+        let squat = BigLift.squat
+
+        func logged(_ kg: Double, reps: Int, daysAgo: Int) -> Workout {
+            var w = workout(minutes: 45, daysAgo: daysAgo, muscles: [.quads: 0.8])
+            w.exercises = [LoggedExercise(exerciseID: squat.exerciseID, name: squat.exerciseName,
+                                          primary: [.quads], secondary: [],
+                                          sets: [LoggedSet(weightKg: kg, reps: reps)])]
+            return w
+        }
+        let first = logged(100, reps: 5, daysAgo: 10)
+        let second = logged(110, reps: 5, daysAgo: 3)
+        store.add(first)
+        store.add(second)
+
+        XCTAssertFalse(store.isPersonalRecord(first.exercises[0], in: first), "beaten by a later lift")
+        XCTAssertTrue(store.isPersonalRecord(second.exercises[0], in: second))
+        XCTAssertEqual(store.bestRecord(for: squat.exerciseID)?.weightKg, 110)
+
+        // A heavier record entered by hand takes over and survives a reload.
+        store.setManualRecord(PersonalRecord(exerciseID: squat.exerciseID, name: squat.exerciseName,
+                                             weightKg: 160, reps: 1, date: Date()))
+        XCTAssertEqual(store.bestRecord(for: squat.exerciseID)?.weightKg, 160)
+        XCTAssertFalse(store.isPersonalRecord(second.exercises[0], in: second))
+        XCTAssertEqual(WorkoutStore(fileURL: url).manualRecords.count, 1)
+
+        store.clearManualRecord(exerciseID: squat.exerciseID)
+        XCTAssertEqual(store.bestRecord(for: squat.exerciseID)?.weightKg, 110)
+    }
+
+    func testBigLiftsExistInTheDirectory() {
+        for lift in BigLift.allCases {
+            XCTAssertTrue(ExerciseLibrary.all.contains { $0.id == lift.exerciseID }, "\(lift.title) missing from directory")
+        }
+    }
+
+    func testOneRepMaxEstimate() {
+        XCTAssertEqual(PersonalRecord.estimateOneRepMax(weightKg: 100, reps: 1), 100)
+        XCTAssertEqual(PersonalRecord.estimateOneRepMax(weightKg: 100, reps: 5), 100 * (1 + 5.0 / 30), accuracy: 0.001)
+    }
+
+    func testHeightUnitFormatting() {
+        XCTAssertEqual(HeightUnit.cm.format(cm: 172), "172 cm")
+        XCTAssertEqual(HeightUnit.feetInches.format(cm: 172.72), "5′8″")
+        XCTAssertEqual(HeightUnit.feetInches.format(cm: 182.88), "6′0″")
+    }
+
+    func testSportsHaveUniqueNamesAndIncludeTheNewOnes() {
+        let names = WorkoutCategory.sport.activities.map(\.name)
+        XCTAssertEqual(names.count, Set(names).count)
+        for expected in ["Table Tennis", "Pickleball", "Squash", "Golf", "Hockey", "Skateboarding"] {
+            XCTAssertTrue(names.contains(expected), "missing \(expected)")
+        }
+        for category in WorkoutCategory.allCases {
+            let all = category.activities.map(\.name)
+            XCTAssertEqual(all.count, Set(all).count, "duplicate activity in \(category)")
+            XCTAssertTrue(category.activities.allSatisfy { !$0.muscles.isEmpty })
+        }
+    }
+
+    func testMaleAndFemaleBodiesAreClearlyDifferent() throws {
+        let base = try XCTUnwrap(BodyAsset.loadBase())
+        func shoulderWidth(_ gender: BodyGender) -> Float {
+            let mesh = BodyAsset.morph(base, profile: BodyProfile(gender: gender))
+            let band = mesh.positions.filter { $0.y > 5.3 && $0.y < 5.6 }
+            return (band.map(\.x).max() ?? 0) - (band.map(\.x).min() ?? 0)
+        }
+        let male = shoulderWidth(.male)
+        let neutral = shoulderWidth(.neutral)
+        let female = shoulderWidth(.female)
+        XCTAssertGreaterThan(male - female, 0.15, "male and female shoulders should differ visibly")
+        XCTAssertGreaterThan(male, neutral)
+        XCTAssertGreaterThan(neutral, female)
     }
 }

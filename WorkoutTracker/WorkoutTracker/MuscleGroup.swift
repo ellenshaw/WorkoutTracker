@@ -197,23 +197,29 @@ enum HeatCalculator {
         return scores.mapValues { min($0 / 10, 1) }
     }
 
-    /// Combines recent workouts into one intensity per muscle.
+    /// Combines recent workouts into one intensity per muscle, fading as time passes.
     ///
     /// Each workout contributes `intensity × (duration / 45 min)`, with the duration factor
-    /// clamped to 0.5…1.5 so one marathon session can't dominate. A single hard 45 minute
-    /// workout lands in the orange-red range, and repeated sessions push a muscle to the top.
-    static func weeklyHeat(workouts: [Workout], now: Date = Date(), days: Int = 7) -> [MuscleGroup: Double] {
-        guard let start = Calendar.current.date(byAdding: .day, value: -days, to: now) else { return [:] }
-
+    /// clamped to 0.5…1.5 so one marathon session can't dominate. Its contribution then halves
+    /// every `halfLifeDays`, so a muscle's colour cools gradually from red back toward blue as it
+    /// recovers instead of vanishing on a deadline. Repeated sessions stack up to the top of the scale.
+    static func recoveryHeat(workouts: [Workout],
+                             now: Date = Date(),
+                             halfLifeDays: Double = 3.5,
+                             maxDays: Double = 21) -> [MuscleGroup: Double] {
         var scores: [MuscleGroup: Double] = [:]
-        for workout in workouts where workout.date >= start && workout.date <= now {
+        for workout in workouts {
+            let ageDays = max(now.timeIntervalSince(workout.date) / 86_400, 0)
+            guard ageDays <= maxDays else { continue }
+
+            let decay = pow(0.5, ageDays / max(halfLifeDays, 0.1))
             let factor = min(max(Double(workout.duration) / 45.0, 0.5), 1.5)
             for (muscle, intensity) in workout.heat {
-                scores[muscle, default: 0] += intensity * factor
+                scores[muscle, default: 0] += intensity * factor * decay
             }
         }
         return scores.compactMapValues { score in
-            score > 0 ? min(score / 1.2, 1) : nil
+            score > 0.01 ? min(score / 1.2, 1) : nil
         }
     }
 }

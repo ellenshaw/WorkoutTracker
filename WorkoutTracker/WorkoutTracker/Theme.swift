@@ -14,6 +14,9 @@ enum StorageKey {
     static let bodyAge = "bodyAge"
     static let bodyWeightKg = "bodyWeightKg"
     static let bodyHeightCm = "bodyHeightCm"
+    static let heightUnit = "heightUnit"
+    static let hologramStyle = "hologramStyle"
+    static let fadeHalfLifeDays = "fadeHalfLifeDays"
 }
 
 enum WeightUnit: String, CaseIterable, Identifiable {
@@ -57,6 +60,36 @@ enum AppearanceMode: String, CaseIterable, Identifiable {
         case .dark: return .dark
         }
     }
+}
+
+enum HeightUnit: String, CaseIterable, Identifiable {
+    case cm, feetInches
+
+    var id: String { rawValue }
+
+    var title: String { self == .cm ? "cm" : "ft / in" }
+
+    /// "172 cm" or 5′8″.
+    func format(cm: Double) -> String {
+        switch self {
+        case .cm:
+            return "\(Int(cm.rounded())) cm"
+        case .feetInches:
+            let totalInches = Int((cm / 2.54).rounded())
+            return "\(totalInches / 12)′\(totalInches % 12)″"
+        }
+    }
+
+    /// How much one tap of a stepper changes the height, in centimetres.
+    var stepCm: Double { self == .cm ? 1 : 2.54 }
+}
+
+/// How the hologram's skin is drawn.
+enum HologramStyle: String, CaseIterable, Identifiable {
+    case lines, grid
+
+    var id: String { rawValue }
+    var title: String { self == .lines ? "Lines" : "Grid" }
 }
 
 enum Theme {

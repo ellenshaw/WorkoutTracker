@@ -88,9 +88,21 @@ struct WorkoutResultView: View {
 
             ForEach(workout.exercises) { exercise in
                 VStack(alignment: .leading, spacing: 4) {
-                    Text(exercise.name)
-                        .font(.subheadline.weight(.semibold))
-                        .foregroundStyle(Theme.accent)
+                    HStack(spacing: 6) {
+                        Text(exercise.name)
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(Theme.accent)
+                        if store.isPersonalRecord(exercise, in: workout) {
+                            Label("PR", systemImage: "trophy.fill")
+                                .font(.caption2.weight(.bold))
+                                .padding(.horizontal, 6)
+                                .padding(.vertical, 2)
+                                .background(Color.yellow.opacity(0.25))
+                                .foregroundStyle(Color.yellow)
+                                .clipShape(Capsule())
+                                .accessibilityLabel("New personal record")
+                        }
+                    }
 
                     ForEach(Array(exercise.sets.enumerated()), id: \.element.id) { index, set in
                         HStack {

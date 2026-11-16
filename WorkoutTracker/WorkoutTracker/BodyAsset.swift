@@ -64,6 +64,10 @@ struct BodyBase {
     let weights: [UInt8]
     let muscleCount: Int
     let maxWeight: [Float]
+    /// Mesh neighbours in compressed form: vertex `v`'s neighbours are
+    /// `neighbours[neighbourStart[v]..<neighbourStart[v + 1]]`. Used to smooth the surface.
+    let neighbourStart: [Int32]
+    let neighbours: [UInt16]
     /// Shape deltas in the order of `BodyAsset.targetOrder`.
     let targets: [[SIMD3<Float>]]
 }
@@ -143,6 +147,7 @@ enum BodyAsset {
         let triangles: [UInt16] = copyArray(faces, from: 4, count: triangleCount * 3)
         guard triangles.allSatisfy({ Int($0) < vertexCount }) else { return nil }
 
+        let adjacency = buildAdjacency(vertexCount: vertexCount, triangles: triangles)
         let loaded = BodyBase(positions: positions,
                               headMask: mask.map { Float($0) / 255 },
                               headCore: core.map { Int($0) },
@@ -153,6 +158,8 @@ enum BodyAsset {
                               maxWeight: (0..<vertexCount).map { v in
                                   Float((0..<muscleCount).map { weights[v * muscleCount + $0] }.max() ?? 0) / 255
                               },
+                              neighbourStart: adjacency.start,
+                              neighbours: adjacency.list,
                               targets: deltas)
         cachedBase = loaded
         return loaded
@@ -162,6 +169,25 @@ enum BodyAsset {
     static func load(_ profile: BodyProfile = BodyProfile()) -> BodyMeshData? {
         guard let base = loadBase() else { return nil }
         return morph(base, profile: profile)
+    }
+
+    private static func buildAdjacency(vertexCount: Int, triangles: [UInt16]) -> (start: [Int32], list: [UInt16]) {
+        var sets = [Set<UInt16>](repeating: [], count: vertexCount)
+        var i = 0
+        while i + 2 < triangles.count {
+            let a = triangles[i], b = triangles[i + 1], c = triangles[i + 2]
+            sets[Int(a)].formUnion([b, c])
+            sets[Int(b)].formUnion([a, c])
+            sets[Int(c)].formUnion([a, b])
+            i += 3
+        }
+        var start: [Int32] = [0]
+        var list: [UInt16] = []
+        for set in sets {
+            list.append(contentsOf: set.sorted())
+            start.append(Int32(list.count))
+        }
+        return (start, list)
     }
 
     private static func vectors(from floats: [Float]) -> [Vec] {
@@ -198,15 +224,21 @@ enum BodyAsset {
         let muscle = profile.muscleFactor
         let weight = profile.weightFactor
 
+        // The male and female shapes are pushed apart so the difference is easy to see. Neutral
+        // stays exactly halfway between them.
+        let contrast: Float = 2.0
+        let shapeMale = 0.5 + contrast * (male - 0.5)
+        let shapeFemale = 1 - shapeMale
+
         let youngWeight = (1 - age)
         let t = base.targets
 
         // Coefficients for each target: [target index: weight].
         var coefficients: [(Int, Float)] = [
-            (Target.youngMale.rawValue, youngWeight * male),
-            (Target.youngFemale.rawValue, youngWeight * female),
-            (Target.oldMale.rawValue, age * male),
-            (Target.oldFemale.rawValue, age * female),
+            (Target.youngMale.rawValue, youngWeight * shapeMale),
+            (Target.youngFemale.rawValue, youngWeight * shapeFemale),
+            (Target.oldMale.rawValue, age * shapeMale),
+            (Target.oldFemale.rawValue, age * shapeFemale),
             (Target.muscleMale.rawValue, muscle * male),
             (Target.muscleFemale.rawValue, muscle * female)
         ]
@@ -217,7 +249,7 @@ enum BodyAsset {
             coefficients.append((Target.slimMale.rawValue, -weight * male))
             coefficients.append((Target.slimFemale.rawValue, -weight * female))
         }
-        coefficients = coefficients.filter { $0.1 > 0 }
+        coefficients = coefficients.filter { $0.1 != 0 }
 
         var positions = base.positions
         for (index, factor) in coefficients {
@@ -228,6 +260,7 @@ enum BodyAsset {
         }
 
         roundHead(&positions, base: base)
+        smooth(&positions, base: base, iterations: 2)
 
         // Feet on the ground, fixed overall height.
         let minY = positions.map(\.y).min() ?? 0
@@ -249,12 +282,34 @@ enum BodyAsset {
             positions[v] += flat[v] * (relief * min(bump, 1.3))
         }
 
+        // Relief edges and fine bumps make wobbly lines, so iron the surface once more.
+        smooth(&positions, base: base, iterations: 3)
+
         return BodyMeshData(positions: positions,
                             normals: smoothNormals(positions: positions, triangles: base.triangles),
                             triangles: base.triangles,
                             weights: base.weights,
                             muscleCount: base.muscleCount,
                             maxWeight: base.maxWeight)
+    }
+
+    /// Light Taubin smoothing: removes small bumps without shrinking the body.
+    private static func smooth(_ positions: inout [Vec], base: BodyBase, iterations: Int) {
+        let passes: [Float] = [0.5, -0.53]
+        for _ in 0..<iterations {
+            for factor in passes {
+                var next = positions
+                for v in 0..<positions.count {
+                    let start = Int(base.neighbourStart[v]), end = Int(base.neighbourStart[v + 1])
+                    if end <= start { continue }
+                    var sum = Vec.zero
+                    for k in start..<end { sum += positions[Int(base.neighbours[k])] }
+                    let average = sum / Float(end - start)
+                    next[v] = positions[v] + (average - positions[v]) * factor
+                }
+                positions = next
+            }
+        }
     }
 
     static func smoothstep(_ x: Float, _ a: Float, _ b: Float) -> Float {
@@ -393,7 +448,7 @@ enum BodyAsset {
     }
 
     /// Skin contour lines, plus each muscle's fibres and outline.
-    static func lines(for mesh: BodyMeshData, lift: Float = 0.006) -> BodyLines {
+    static func lines(for mesh: BodyMeshData, style: HologramStyle = .lines, lift: Float = 0.006) -> BodyLines {
         var out = BodyLines()
 
         func point(_ c: Crossing) -> Vec {
@@ -414,10 +469,14 @@ enum BodyAsset {
             field[c.a] * (1 - c.t) + field[c.b] * c.t
         }
 
-        // Horizontal scan-lines, only where there is no muscle drawn on top.
-        for pair in slice(mesh, normal: Vec(0, 1, 0), step: 0.06, offset: 0.0137, triangle: { _, _, _ in true }) {
-            if max(value(mesh.maxWeight, pair.0), value(mesh.maxWeight, pair.1)) < 0.45 {
-                add(pair, muscle: -1, kind: 0)
+        // Horizontal scan-lines (plus vertical ones in grid style), only where no muscle is drawn on top.
+        var skinPlanes: [(normal: Vec, step: Float)] = [(Vec(0, 1, 0), 0.06)]
+        if style == .grid { skinPlanes.append((Vec(1, 0, 0), 0.12)) }
+        for plane in skinPlanes {
+            for pair in slice(mesh, normal: plane.normal, step: plane.step, offset: 0.0137, triangle: { _, _, _ in true }) {
+                if max(value(mesh.maxWeight, pair.0), value(mesh.maxWeight, pair.1)) < 0.45 {
+                    add(pair, muscle: -1, kind: 0)
+                }
             }
         }
 
@@ -426,14 +485,20 @@ enum BodyAsset {
             let family = fibreFamily(muscle)
 
             for side in (family.mirrored ? [Float(1), -1] : [Float(1)]) {
-                let normal = Vec(family.nx * side, family.ny, 0)
-                let pairs = slice(mesh, normal: normal, step: family.step, offset: 0.0137) { a, b, c in
-                    guard max(field[a], field[b], field[c]) > 0.4 else { return false }
-                    if !family.mirrored { return true }
-                    return (mesh.positions[a].x + mesh.positions[b].x + mesh.positions[c].x) / 3 * side >= -0.02
+                // Fibres, and in grid style a second set across them.
+                var cuts: [(normal: Vec, step: Float)] = [(Vec(family.nx * side, family.ny, 0), family.step)]
+                if style == .grid {
+                    cuts.append((Vec(-family.ny, family.nx * side, 0), family.step * 1.4))
                 }
-                for pair in pairs where value(field, pair.0) > 0.5 && value(field, pair.1) > 0.5 {
-                    add(pair, muscle: column, kind: 1)
+                for cut in cuts {
+                    let pairs = slice(mesh, normal: cut.normal, step: cut.step, offset: 0.0137) { a, b, c in
+                        guard max(field[a], field[b], field[c]) > 0.4 else { return false }
+                        if !family.mirrored { return true }
+                        return (mesh.positions[a].x + mesh.positions[b].x + mesh.positions[c].x) / 3 * side >= -0.02
+                    }
+                    for pair in pairs where value(field, pair.0) > 0.5 && value(field, pair.1) > 0.5 {
+                        add(pair, muscle: column, kind: 1)
+                    }
                 }
             }
 

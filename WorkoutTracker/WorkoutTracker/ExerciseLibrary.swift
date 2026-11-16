@@ -7,6 +7,7 @@
 //
 
 import Foundation
+import UIKit
 
 // MARK: - Strength exercises
 
@@ -138,6 +139,11 @@ struct ActivityPreset: Identifiable, Hashable {
     let muscles: [MuscleGroup: HeatLevel]
 
     var id: String { name }
+
+    /// The icon, falling back to a generic one if this iOS version doesn't have that symbol.
+    var symbol: String {
+        UIImage(systemName: icon) != nil ? icon : "sportscourt.fill"
+    }
 }
 
 extension WorkoutCategory {
@@ -155,6 +161,8 @@ extension WorkoutCategory {
                                muscles: [.calves: .light, .quads: .light, .glutes: .light, .hamstrings: .light]),
                 ActivityPreset(name: "Cycling", icon: "figure.outdoor.cycle",
                                muscles: [.quads: .heavy, .glutes: .moderate, .calves: .moderate, .hamstrings: .light]),
+                ActivityPreset(name: "Spin Class", icon: "figure.indoor.cycle",
+                               muscles: [.quads: .heavy, .glutes: .moderate, .calves: .moderate, .hamstrings: .light, .abs: .light]),
                 ActivityPreset(name: "Swimming", icon: "figure.pool.swim",
                                muscles: [.shoulders: .heavy, .lats: .heavy, .chest: .moderate, .triceps: .moderate, .abs: .moderate, .quads: .light]),
                 ActivityPreset(name: "Rowing", icon: "figure.rower",
@@ -195,14 +203,58 @@ extension WorkoutCategory {
                                muscles: [.quads: .heavy, .hamstrings: .moderate, .calves: .moderate, .glutes: .moderate, .abs: .light]),
                 ActivityPreset(name: "Tennis", icon: "tennis.racket",
                                muscles: [.shoulders: .moderate, .forearms: .moderate, .obliques: .moderate, .quads: .moderate, .calves: .light]),
-                ActivityPreset(name: "Volleyball", icon: "volleyball.fill",
-                               muscles: [.shoulders: .moderate, .quads: .moderate, .calves: .moderate, .abs: .light]),
+                ActivityPreset(name: "Table Tennis", icon: "figure.table.tennis",
+                               muscles: [.forearms: .moderate, .shoulders: .light, .quads: .light, .calves: .light, .obliques: .light]),
+                ActivityPreset(name: "Pickleball", icon: "figure.pickleball",
+                               muscles: [.shoulders: .moderate, .forearms: .moderate, .quads: .moderate, .calves: .moderate, .glutes: .light, .obliques: .light]),
                 ActivityPreset(name: "Badminton", icon: "figure.badminton",
                                muscles: [.shoulders: .moderate, .forearms: .moderate, .quads: .moderate, .calves: .moderate]),
+                ActivityPreset(name: "Squash", icon: "figure.squash",
+                               muscles: [.quads: .heavy, .glutes: .moderate, .calves: .moderate, .shoulders: .moderate, .forearms: .moderate, .abs: .light]),
+                ActivityPreset(name: "Racquetball", icon: "figure.racquetball",
+                               muscles: [.quads: .moderate, .glutes: .moderate, .shoulders: .moderate, .forearms: .moderate, .calves: .moderate]),
+                ActivityPreset(name: "Volleyball", icon: "volleyball.fill",
+                               muscles: [.shoulders: .moderate, .quads: .moderate, .calves: .moderate, .abs: .light]),
+                ActivityPreset(name: "Golf", icon: "figure.golf",
+                               muscles: [.obliques: .moderate, .shoulders: .light, .forearms: .light, .glutes: .light, .lowerBack: .light]),
+                ActivityPreset(name: "Baseball / Softball", icon: "figure.baseball",
+                               muscles: [.shoulders: .moderate, .obliques: .moderate, .forearms: .moderate, .quads: .light, .glutes: .light]),
+                ActivityPreset(name: "Football", icon: "football.fill",
+                               muscles: [.quads: .moderate, .glutes: .moderate, .hamstrings: .moderate, .calves: .moderate, .shoulders: .light, .chest: .light]),
+                ActivityPreset(name: "Rugby", icon: "figure.rugby",
+                               muscles: [.quads: .heavy, .hamstrings: .moderate, .glutes: .moderate, .shoulders: .moderate, .traps: .light, .lats: .light, .abs: .light]),
+                ActivityPreset(name: "Hockey", icon: "figure.hockey",
+                               muscles: [.quads: .heavy, .glutes: .moderate, .hamstrings: .moderate, .abs: .moderate, .forearms: .light, .shoulders: .light]),
+                ActivityPreset(name: "Lacrosse", icon: "figure.lacrosse",
+                               muscles: [.quads: .moderate, .hamstrings: .moderate, .forearms: .moderate, .shoulders: .moderate, .abs: .light]),
+                ActivityPreset(name: "Cricket", icon: "figure.cricket",
+                               muscles: [.shoulders: .moderate, .forearms: .light, .quads: .light, .obliques: .light]),
+                ActivityPreset(name: "Handball", icon: "figure.handball",
+                               muscles: [.shoulders: .moderate, .quads: .moderate, .calves: .light, .abs: .light]),
+                ActivityPreset(name: "Ultimate Frisbee", icon: "figure.disc.sports",
+                               muscles: [.quads: .moderate, .hamstrings: .moderate, .calves: .moderate, .shoulders: .light]),
+                ActivityPreset(name: "Skateboarding", icon: "figure.skateboarding",
+                               muscles: [.quads: .moderate, .calves: .moderate, .glutes: .moderate, .abs: .light]),
+                ActivityPreset(name: "Surfing", icon: "figure.surfing",
+                               muscles: [.shoulders: .heavy, .lats: .moderate, .triceps: .moderate, .abs: .moderate, .quads: .light]),
+                ActivityPreset(name: "Skiing / Snowboarding", icon: "figure.skiing.downhill",
+                               muscles: [.quads: .heavy, .glutes: .moderate, .abs: .moderate, .calves: .light, .hamstrings: .light]),
+                ActivityPreset(name: "Kayaking", icon: "figure.kayaking",
+                               muscles: [.lats: .moderate, .shoulders: .moderate, .forearms: .moderate, .abs: .moderate, .triceps: .light, .biceps: .light]),
+                ActivityPreset(name: "Water Polo", icon: "figure.waterpolo",
+                               muscles: [.shoulders: .heavy, .lats: .moderate, .quads: .moderate, .abs: .moderate]),
                 ActivityPreset(name: "Boxing", icon: "figure.boxing",
                                muscles: [.shoulders: .heavy, .chest: .moderate, .triceps: .moderate, .abs: .moderate, .obliques: .moderate, .forearms: .moderate, .calves: .light]),
                 ActivityPreset(name: "Martial Arts", icon: "figure.martial.arts",
-                               muscles: [.quads: .moderate, .hamstrings: .moderate, .abs: .moderate, .obliques: .moderate, .shoulders: .light, .glutes: .light])
+                               muscles: [.quads: .moderate, .hamstrings: .moderate, .abs: .moderate, .obliques: .moderate, .shoulders: .light, .glutes: .light]),
+                ActivityPreset(name: "Wrestling", icon: "figure.wrestling",
+                               muscles: [.shoulders: .moderate, .lats: .moderate, .traps: .moderate, .abs: .moderate, .quads: .moderate, .forearms: .moderate, .lowerBack: .light]),
+                ActivityPreset(name: "Jiu-Jitsu", icon: "figure.martial.arts",
+                               muscles: [.forearms: .moderate, .lats: .moderate, .abs: .moderate, .quads: .light, .biceps: .light, .shoulders: .light]),
+                ActivityPreset(name: "Fencing", icon: "figure.fencing",
+                               muscles: [.quads: .moderate, .forearms: .moderate, .calves: .moderate, .shoulders: .light, .glutes: .light]),
+                ActivityPreset(name: "Gymnastics", icon: "figure.gymnastics",
+                               muscles: [.shoulders: .heavy, .abs: .heavy, .forearms: .moderate, .lats: .moderate, .triceps: .moderate, .chest: .moderate, .quads: .light])
             ]
 
         case .mobility:

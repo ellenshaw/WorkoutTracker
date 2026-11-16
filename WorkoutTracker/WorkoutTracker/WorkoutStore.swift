@@ -11,9 +11,12 @@ final class WorkoutStore: ObservableObject {
     @Published private(set) var workouts: [Workout] = []
 
     @Published private(set) var customExercises: [Exercise] = []
+    /// Records typed in by hand, for lifts done outside the app.
+    @Published private(set) var manualRecords: [PersonalRecord] = []
 
     private let fileURL: URL
     private let exercisesURL: URL
+    private let recordsURL: URL
 
     init(fileURL: URL? = nil) {
         let url = fileURL ?? FileManager.default
@@ -22,6 +25,8 @@ final class WorkoutStore: ObservableObject {
         self.fileURL = url
         self.exercisesURL = url.deletingLastPathComponent()
             .appendingPathComponent(url.deletingPathExtension().lastPathComponent + "-exercises.json")
+        self.recordsURL = url.deletingLastPathComponent()
+            .appendingPathComponent(url.deletingPathExtension().lastPathComponent + "-records.json")
         load()
     }
 
@@ -50,6 +55,19 @@ final class WorkoutStore: ObservableObject {
         save()
     }
 
+    func setManualRecord(_ record: PersonalRecord) {
+        var saved = record
+        saved.isManual = true
+        manualRecords.removeAll { $0.exerciseID == record.exerciseID }
+        manualRecords.append(saved)
+        saveRecords()
+    }
+
+    func clearManualRecord(exerciseID: String) {
+        manualRecords.removeAll { $0.exerciseID == exerciseID }
+        saveRecords()
+    }
+
     @discardableResult
     func addCustomExercise(name: String, primary: [MuscleGroup], secondary: [MuscleGroup]) -> Exercise {
         let exercise = Exercise(id: "custom-" + UUID().uuidString, name: name, primary: primary,
@@ -68,8 +86,9 @@ final class WorkoutStore: ObservableObject {
         workoutsThisWeek.reduce(0) { $0 + $1.duration }
     }
 
-    func weeklyHeat() -> [MuscleGroup: Double] {
-        HeatCalculator.weeklyHeat(workouts: workouts)
+    /// Muscle heat now: recent workouts count most, and each one fades as time passes.
+    func currentHeat(halfLifeDays: Double = 3.5) -> [MuscleGroup: Double] {
+        HeatCalculator.recoveryHeat(workouts: workouts, halfLifeDays: halfLifeDays)
     }
 
     func add(_ workout: Workout) {
@@ -86,8 +105,10 @@ final class WorkoutStore: ObservableObject {
     func removeAll() {
         workouts = []
         customExercises = []
+        manualRecords = []
         save()
         saveExercises()
+        saveRecords()
     }
 
     private func load() {
@@ -101,6 +122,20 @@ final class WorkoutStore: ObservableObject {
            let decoded = try? JSONDecoder().decode([Exercise].self, from: data) {
             customExercises = decoded
         }
+        if let data = try? Data(contentsOf: recordsURL) {
+            let decoder = JSONDecoder()
+            decoder.dateDecodingStrategy = .iso8601
+            if let decoded = try? decoder.decode([PersonalRecord].self, from: data) {
+                manualRecords = decoded
+            }
+        }
+    }
+
+    private func saveRecords() {
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        guard let data = try? encoder.encode(manualRecords) else { return }
+        try? data.write(to: recordsURL, options: [.atomic])
     }
 
     private func saveExercises() {
