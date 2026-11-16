@@ -1,0 +1,23 @@
+{
+  "name": "workout-coach-backend",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Small proxy that lets the Workout Tracker app talk to Claude without shipping an API key",
+  "engines": { "node": ">=20" },
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/server.js",
+    "dev": "tsx watch src/server.ts",
+    "typecheck": "tsc --noEmit",
+    "test": "node --import tsx --test test/*.test.ts"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^1.9.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.6.0"
+  }
+}

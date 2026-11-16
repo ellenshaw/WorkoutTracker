@@ -7,6 +7,8 @@ import SwiftUI
 
 struct SettingsView: View {
     @EnvironmentObject private var store: WorkoutStore
+    @EnvironmentObject private var plans: PlanStore
+    @EnvironmentObject private var coach: CoachModel
 
     @AppStorage(StorageKey.appearance) private var appearance = AppearanceMode.system.rawValue
     @AppStorage(StorageKey.heightUnit) private var heightUnit = HeightUnit.cm.rawValue
@@ -15,7 +17,17 @@ struct SettingsView: View {
     @AppStorage(StorageKey.userName) private var userName = ""
     @AppStorage(StorageKey.isLoggedIn) private var isLoggedIn = false
 
+    @AppStorage(StorageKey.coachShareHistory) private var coachShare = true
+    @AppStorage(StorageKey.coachConsent) private var coachConsent = false
+    @AppStorage(StorageKey.coachBaseURL) private var coachURL = ""
+    @AppStorage(StorageKey.coachAppKey) private var coachKey = ""
+
     @State private var confirmingDelete = false
+
+    /// Release builds carry the server address in Info.plist; only development builds show the fields.
+    private var coachIsPreconfigured: Bool {
+        Bundle.main.object(forInfoDictionaryKey: "CoachBaseURL") != nil
+    }
 
     private var version: String {
         let short = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0"
@@ -72,6 +84,26 @@ struct SettingsView: View {
                     .pickerStyle(.segmented)
                 }
 
+                Section {
+                    Toggle("Share training info with coach", isOn: $coachShare)
+
+                    if !coachIsPreconfigured {
+                        TextField("Server address", text: $coachURL)
+                            .keyboardType(.URL)
+                            .textInputAutocapitalization(.never)
+                            .autocorrectionDisabled()
+                        SecureField("App key", text: $coachKey)
+                    }
+
+                    Button("Clear coach conversation") { coach.clear() }
+                } header: {
+                    Text("AI coach")
+                } footer: {
+                    Text(coachIsPreconfigured
+                         ? "When on, the coach sees your age, weight, height, records and recent workouts so plans fit you. Messages are processed by an AI service."
+                         : "Development build: enter the address of your coach server (see backend/README.md). The AI key lives on the server, never in the app.")
+                }
+
                 Section("Account") {
                     if !userName.isEmpty {
                         LabeledContent("Signed in as", value: userName)
@@ -96,6 +128,9 @@ struct SettingsView: View {
             .alert("Delete account and data?", isPresented: $confirmingDelete) {
                 Button("Delete", role: .destructive) {
                     store.removeAll()
+                    plans.removeAll()
+                    coach.clear()
+                    coachConsent = false
                     userName = ""
                     isLoggedIn = false
                 }

@@ -29,4 +29,6 @@ struct ContentView: View {
 #Preview {
     ContentView()
         .environmentObject(WorkoutStore())
+        .environmentObject(PlanStore())
+        .environmentObject(CoachModel())
 }

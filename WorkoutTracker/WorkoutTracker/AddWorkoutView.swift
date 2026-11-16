@@ -11,6 +11,8 @@ import SwiftUI
 struct LogSession: Identifiable {
     let id = UUID()
     var template: Workout?
+    /// Set when logging a session from a training plan, so finishing marks it done.
+    var planSessionID: UUID?
 }
 
 enum LogRoute: Hashable {
@@ -21,11 +23,14 @@ enum LogRoute: Hashable {
 
 struct AddWorkoutView: View {
     @EnvironmentObject private var store: WorkoutStore
+    @EnvironmentObject private var plans: PlanStore
     @Environment(\.dismiss) private var dismiss
 
+    private let planSessionID: UUID?
     @State private var path: [LogRoute]
 
-    init(template: Workout? = nil) {
+    init(template: Workout? = nil, planSessionID: UUID? = nil) {
+        self.planSessionID = planSessionID
         var initial: [LogRoute] = []
         if let template {
             initial = [template.category == .strength
@@ -60,6 +65,9 @@ struct AddWorkoutView: View {
 
     private func finish(_ workout: Workout) {
         store.add(workout)
+        if let planSessionID {
+            plans.complete(sessionID: planSessionID, workoutID: workout.id)
+        }
         path = [.result(workout)]
     }
 }

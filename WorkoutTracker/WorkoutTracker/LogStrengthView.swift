@@ -342,8 +342,11 @@ struct LogStrengthView: View {
         exercises = template.exercises.map { logged in
             let exercise = Exercise(id: logged.exerciseID, name: logged.name,
                                     primary: logged.primary, secondary: logged.secondary)
+            // Unknown weights or reps (for example "AMRAP" in a plan) stay blank for the user to fill in.
             let sets = logged.sets.map {
-                DraftSet(weight: unit.format(kg: $0.weightKg), reps: String($0.reps), done: false)
+                DraftSet(weight: $0.weightKg > 0 ? unit.format(kg: $0.weightKg) : "",
+                         reps: $0.reps > 0 ? String($0.reps) : "",
+                         done: false)
             }
             return DraftExercise(exercise: exercise,
                                  sets: sets.isEmpty ? [DraftSet()] : sets,

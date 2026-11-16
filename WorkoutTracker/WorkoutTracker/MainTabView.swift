@@ -11,6 +11,9 @@ struct MainTabView: View {
             WorkoutHomeView()
                 .tabItem { Label("Workouts", systemImage: "list.bullet.rectangle.fill") }
 
+            PlansView()
+                .tabItem { Label("Plans", systemImage: "calendar") }
+
             WeeklyBodyView()
                 .tabItem { Label("Body", systemImage: "figure.arms.open") }
 

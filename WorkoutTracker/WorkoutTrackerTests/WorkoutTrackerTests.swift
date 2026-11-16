@@ -393,4 +393,284 @@ final class WorkoutTrackerTests: XCTestCase {
         XCTAssertGreaterThan(male, neutral)
         XCTAssertGreaterThan(neutral, female)
     }
+
+    // MARK: Plans and the AI coach
+
+    private var utc: Calendar {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(identifier: "UTC")!
+        return calendar
+    }
+
+    private func day(_ year: Int, _ month: Int, _ dayOfMonth: Int, hour: Int = 12) -> Date {
+        utc.date(from: DateComponents(year: year, month: month, day: dayOfMonth, hour: hour))!
+    }
+
+    private func session(week: Int, day: Int, title: String = "S", category: WorkoutCategory = .cardio) -> PlanSession {
+        PlanSession(week: week, day: day, title: title, category: category, durationMinutes: 30)
+    }
+
+    func testMondayBasedWeekday() {
+        // 2026-11-16 is a Monday.
+        XCTAssertEqual(TrainingPlan.mondayBasedWeekday(of: day(2026, 11, 16), calendar: utc), 1)
+        XCTAssertEqual(TrainingPlan.mondayBasedWeekday(of: day(2026, 11, 18), calendar: utc), 3)
+        XCTAssertEqual(TrainingPlan.mondayBasedWeekday(of: day(2026, 11, 22), calendar: utc), 7)
+    }
+
+    func testPlanSchedulingFromAMidweekStart() {
+        // Started on a Wednesday: Wednesday sessions are that day, Monday sessions the following Monday.
+        var plan = TrainingPlan(title: "P", goal: "G", summary: "", weeks: 2,
+                                sessions: [session(week: 1, day: 3), session(week: 1, day: 1), session(week: 2, day: 3)])
+        plan.startDate = day(2026, 11, 18)
+
+        XCTAssertEqual(plan.scheduledDate(for: plan.sessions[0], calendar: utc), day(2026, 11, 18, hour: 0))
+        XCTAssertEqual(plan.scheduledDate(for: plan.sessions[1], calendar: utc), day(2026, 11, 23, hour: 0))
+        XCTAssertEqual(plan.scheduledDate(for: plan.sessions[2], calendar: utc), day(2026, 11, 25, hour: 0))
+        XCTAssertEqual(plan.endDate(calendar: utc), day(2026, 12, 1, hour: 0))
+
+        XCTAssertEqual(plan.state(of: plan.sessions[0], now: day(2026, 11, 18), calendar: utc), .today)
+        XCTAssertEqual(plan.state(of: plan.sessions[1], now: day(2026, 11, 18), calendar: utc), .upcoming)
+        XCTAssertEqual(plan.state(of: plan.sessions[0], now: day(2026, 11, 20), calendar: utc), .missed)
+
+        XCTAssertNil(plan.currentWeek(now: day(2026, 11, 17), calendar: utc))
+        XCTAssertEqual(plan.currentWeek(now: day(2026, 11, 18), calendar: utc), 1)
+        XCTAssertEqual(plan.currentWeek(now: day(2026, 11, 25), calendar: utc), 2)
+        XCTAssertEqual(plan.currentWeek(now: day(2027, 3, 1), calendar: utc), 2, "capped at the last week")
+    }
+
+    func testUnstartedPlanHasNoDates() {
+        let plan = TrainingPlan(title: "P", goal: "G", summary: "", weeks: 1, sessions: [session(week: 1, day: 1)])
+        XCTAssertNil(plan.scheduledDate(for: plan.sessions[0], calendar: utc))
+        XCTAssertEqual(plan.state(of: plan.sessions[0], calendar: utc), .unscheduled)
+        XCTAssertEqual(plan.nextSession(calendar: utc)?.id, plan.sessions[0].id)
+    }
+
+    func testNextSessionSkipsDoneAndPrefersUpcomingOverMissed() {
+        var plan = TrainingPlan(title: "P", goal: "G", summary: "", weeks: 1,
+                                sessions: [session(week: 1, day: 1, title: "mon"), session(week: 1, day: 3, title: "wed"),
+                                           session(week: 1, day: 5, title: "fri")])
+        plan.startDate = day(2026, 11, 16)    // a Monday
+        // On Wednesday, Monday is missed; the next one is Wednesday.
+        XCTAssertEqual(plan.nextSession(now: day(2026, 11, 18), calendar: utc)?.title, "wed")
+        plan.sessions[1].completedAt = day(2026, 11, 18)
+        XCTAssertEqual(plan.nextSession(now: day(2026, 11, 18), calendar: utc)?.title, "fri")
+        // Past the end, only the missed ones remain.
+        plan.sessions[2].skipped = true
+        XCTAssertEqual(plan.nextSession(now: day(2026, 11, 30), calendar: utc)?.title, "mon")
+        XCTAssertEqual(plan.completedSessions, 1)
+        XCTAssertEqual(plan.skippedSessions, 1)
+        XCTAssertEqual(plan.progress, 1.0 / 3.0, accuracy: 0.001)
+    }
+
+    @MainActor
+    func testPlanStoreLifecycle() {
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("\(UUID().uuidString)-plans.json")
+        defer { try? FileManager.default.removeItem(at: url) }
+
+        let store = PlanStore(fileURL: url)
+        let first = store.add(TrainingPlan(title: "A", goal: "g", summary: "", weeks: 1,
+                                           sessions: [session(week: 1, day: 1), session(week: 1, day: 2)]))
+        let second = store.add(TrainingPlan(title: "B", goal: "g", summary: "", weeks: 1, sessions: [session(week: 1, day: 1)]))
+        XCTAssertEqual(store.proposedPlans.count, 2)
+        XCTAssertNil(store.activePlan)
+
+        store.start(first.id, on: Date())
+        XCTAssertEqual(store.activePlan?.id, first.id)
+
+        // Starting another plan archives the first.
+        store.start(second.id, on: Date())
+        XCTAssertEqual(store.activePlan?.id, second.id)
+        XCTAssertEqual(store.plan(id: first.id)?.status, .archived)
+
+        // Completing every session finishes the plan; undoing reopens it.
+        let sessionID = store.plan(id: second.id)!.sessions[0].id
+        let workoutID = UUID()
+        store.complete(sessionID: sessionID, workoutID: workoutID)
+        XCTAssertEqual(store.plan(id: second.id)?.status, .completed)
+        XCTAssertEqual(store.plan(id: second.id)?.sessions[0].completedWorkoutID, workoutID)
+        store.undoCompletion(sessionID: sessionID)
+        XCTAssertEqual(store.plan(id: second.id)?.status, .active)
+
+        // Skipping counts as handled, so the plan can finish without that session.
+        store.setSkipped(true, sessionID: sessionID)
+        XCTAssertEqual(store.plan(id: second.id)?.status, .completed)
+        store.setSkipped(false, sessionID: sessionID)
+        XCTAssertEqual(store.plan(id: second.id)?.status, .active)
+
+        // Persists.
+        let reloaded = PlanStore(fileURL: url)
+        XCTAssertEqual(reloaded.plans.count, 2)
+        reloaded.delete(first.id)
+        XCTAssertEqual(reloaded.plans.count, 1)
+    }
+
+    func testPlanDraftDecodingAndConversion() throws {
+        let json = #"""
+        {
+          "title": "8-week bench builder", "goal": "Add 10 kg", "summary": "Heavy and light days.", "weeks": 8,
+          "sessions": [
+            { "week": 2, "day": 3, "title": "Easy run", "type": "cardio", "activity": "Running", "durationMinutes": 30,
+              "targetDistanceKm": 5, "intensity": "easy" },
+            { "week": 1, "day": 1, "title": "Heavy bench", "type": "strength", "durationMinutes": 60,
+              "exercises": [ { "name": "Bench Press (Barbell)", "sets": 5, "reps": "5", "percentOfOneRepMax": 80,
+                               "muscles": ["chest", "nonsense"] } ] }
+          ]
+        }
+        """#
+        let draft = try JSONDecoder().decode(PlanDraft.self, from: Data(json.utf8))
+        let plan = draft.makePlan()
+        XCTAssertEqual(plan.status, .proposed)
+        XCTAssertEqual(plan.weeks, 8)
+        XCTAssertEqual(plan.sessions.map(\.title), ["Heavy bench", "Easy run"], "sorted by week then day")
+        XCTAssertEqual(plan.sessions[0].category, .strength)
+        XCTAssertEqual(plan.sessions[0].exercises[0].muscles, [.chest], "unknown muscles are dropped")
+        XCTAssertEqual(plan.sessions[1].category, .cardio)
+        XCTAssertEqual(plan.sessions[1].targetDistanceKm, 5)
+    }
+
+    func testPlanTemplatesMatchExercisesAndWeights() {
+        // Different word order and punctuation still find the directory exercise.
+        let planned = PlannedExercise(name: "barbell bench press", sets: 3, reps: "8-10", percentOfOneRepMax: 80)
+        let resolved = PlanTemplates.resolveExercise(planned, in: ExerciseLibrary.all)
+        XCTAssertEqual(resolved.id, BigLift.bench.exerciseID)
+
+        // Something unknown becomes its own exercise, using the muscles the plan gave.
+        let odd = PlannedExercise(name: "Landmine Press", sets: 3, reps: "10", muscles: [.shoulders])
+        let custom = PlanTemplates.resolveExercise(odd, in: ExerciseLibrary.all)
+        XCTAssertTrue(custom.id.hasPrefix("plan-"))
+        XCTAssertEqual(custom.primary, [.shoulders])
+
+        XCTAssertEqual(PlanTemplates.firstNumber(in: "8-10"), 8)
+        XCTAssertEqual(PlanTemplates.firstNumber(in: "AMRAP"), 0)
+        XCTAssertEqual(PlanTemplates.firstNumber(in: "45s"), 45)
+
+        // 80% of a 100 kg estimated max is 80 kg; with no record there is nothing to prefill.
+        let record = PersonalRecord(exerciseID: BigLift.bench.exerciseID, name: "Bench", weightKg: 100, reps: 1, date: Date())
+        XCTAssertEqual(PlanTemplates.targetWeightKg(for: planned, record: record), 80)
+        XCTAssertEqual(PlanTemplates.targetWeightKg(for: planned, record: nil), 0)
+        // An explicit weight wins.
+        let explicit = PlannedExercise(name: "x", sets: 1, reps: "5", percentOfOneRepMax: 80, weightKg: 42.5)
+        XCTAssertEqual(PlanTemplates.targetWeightKg(for: explicit, record: record), 42.5)
+    }
+
+    func testStrengthAndActivityTemplates() {
+        var strength = PlanSession(week: 1, day: 1, title: "Heavy bench", category: .strength, durationMinutes: 60)
+        strength.exercises = [PlannedExercise(name: "Bench Press (Barbell)", sets: 4, reps: "5", percentOfOneRepMax: 80)]
+        let record = PersonalRecord(exerciseID: BigLift.bench.exerciseID, name: "Bench", weightKg: 100, reps: 1, date: Date())
+        let workout = PlanTemplates.template(for: strength, exercises: ExerciseLibrary.all) { _ in record }
+        XCTAssertEqual(workout.category, .strength)
+        XCTAssertEqual(workout.exercises.count, 1)
+        XCTAssertEqual(workout.exercises[0].sets.count, 4)
+        XCTAssertEqual(workout.exercises[0].sets[0].weightKg, 80)
+        XCTAssertEqual(workout.exercises[0].sets[0].reps, 5)
+
+        var run = PlanSession(week: 1, day: 2, title: "Easy 5 km", category: .cardio, durationMinutes: 30)
+        run.activity = "Running"
+        run.targetDistanceKm = 5
+        run.intensity = "easy"
+        let runWorkout = PlanTemplates.template(for: run, exercises: ExerciseLibrary.all) { _ in nil }
+        XCTAssertEqual(runWorkout.name, "Running", "matches the Running tile")
+        XCTAssertEqual(runWorkout.duration, 30)
+        XCTAssertTrue(runWorkout.notes.contains("5 km"))
+        XCTAssertNotNil(runWorkout.heat[.calves], "uses the activity's muscle map")
+    }
+
+    // A stand-in for the coach server.
+    private final class FakeTransport: CoachTransport {
+        var results: [Result<CoachReply, Error>]
+        private(set) var received: [[CoachAPIMessage]] = []
+        private(set) var contexts: [CoachContext] = []
+
+        init(_ results: [Result<CoachReply, Error>]) { self.results = results }
+
+        func send(messages: [CoachAPIMessage], context: CoachContext) async throws -> CoachReply {
+            received.append(messages)
+            contexts.append(context)
+            return try results.removeFirst().get()
+        }
+    }
+
+    @MainActor
+    private func tempURL(_ name: String) -> URL {
+        FileManager.default.temporaryDirectory.appendingPathComponent("\(UUID().uuidString)-\(name).json")
+    }
+
+    @MainActor
+    func testCoachChatSavesPlansAndRecoversFromErrors() async throws {
+        let chatURL = tempURL("chat"), planURL = tempURL("plans"), workoutURL = tempURL("workouts")
+        defer { [chatURL, planURL, workoutURL].forEach { try? FileManager.default.removeItem(at: $0) } }
+
+        let draft = PlanDraft(title: "Bench builder", goal: "g", summary: "s", weeks: 4,
+                              sessions: [PlanDraft.Session(week: 1, day: 1, title: "Heavy", type: "strength", durationMinutes: 45)])
+        let transport = FakeTransport([
+            .failure(CoachError.offline),
+            .success(CoachReply(text: "Here's a plan.", plan: draft, refused: nil)),
+            .success(CoachReply(text: "Sure, easy.", plan: nil, refused: nil))
+        ])
+        let coach = CoachModel(transport: transport, fileURL: chatURL)
+        let plans = PlanStore(fileURL: planURL)
+        let context = { CoachContext(today: "2026-11-16", weekday: "Monday", units: .init(weight: "kg", height: "cm"),
+                                      body: nil, records: [], recentWorkouts: [], activePlan: nil, knownExercises: []) }
+
+        // A failed send keeps the user's message and offers a retry.
+        await coach.send("Help me bench more", context: context, plans: plans)
+        XCTAssertEqual(coach.messages.count, 1)
+        XCTAssertNotNil(coach.errorMessage)
+        XCTAssertTrue(plans.plans.isEmpty)
+
+        await coach.retry(context: context, plans: plans)
+        XCTAssertNil(coach.errorMessage)
+        XCTAssertEqual(coach.messages.count, 2, "retry doesn't repeat the user's message")
+        XCTAssertEqual(plans.proposedPlans.count, 1)
+        XCTAssertEqual(coach.messages.last?.planID, plans.proposedPlans.first?.id)
+
+        // The next request carries the earlier turns, with a note about the plan that was made.
+        await coach.send("Make it easier", context: context, plans: plans)
+        let sent = transport.received.last!
+        XCTAssertEqual(sent.map(\.role), ["user", "assistant", "user"])
+        XCTAssertTrue(sent[1].content.contains("Plan created: \"Bench builder\""))
+        XCTAssertEqual(sent.last?.content, "Make it easier")
+
+        // Conversation survives a restart; clearing empties it.
+        XCTAssertEqual(CoachModel(transport: transport, fileURL: chatURL).messages.count, 4)
+        coach.clear()
+        XCTAssertTrue(coach.messages.isEmpty)
+        XCTAssertTrue(CoachModel(transport: transport, fileURL: chatURL).messages.isEmpty)
+    }
+
+    @MainActor
+    func testCoachContextRespectsPrivacyChoice() throws {
+        let workoutURL = tempURL("workouts"), planURL = tempURL("plans")
+        defer { [workoutURL, planURL].forEach { try? FileManager.default.removeItem(at: $0) } }
+
+        let store = WorkoutStore(fileURL: workoutURL)
+        let plans = PlanStore(fileURL: planURL)
+        var w = workout(minutes: 45, muscles: [.quads: 0.8])
+        w.exercises = [LoggedExercise(exerciseID: BigLift.squat.exerciseID, name: BigLift.squat.exerciseName,
+                                      primary: [.quads], secondary: [], sets: [LoggedSet(weightKg: 100, reps: 5)])]
+        store.add(w)
+        let profile = BodyProfile(gender: .female, age: 31, weightKg: 62.04, heightCm: 168.4)
+
+        let shared = CoachContextBuilder.make(workouts: store, plans: plans, profile: profile,
+                                              weightUnit: .lb, heightUnit: .feetInches, shareHistory: true)
+        XCTAssertEqual(shared.body?.age, 31)
+        XCTAssertEqual(shared.body?.weightKg, 62.0)
+        XCTAssertEqual(shared.units.weight, "lb")
+        XCTAssertEqual(shared.records.first?.exercise, BigLift.squat.exerciseName)
+        XCTAssertEqual(shared.recentWorkouts.count, 1)
+        XCTAssertFalse(shared.knownExercises.isEmpty)
+
+        let private_ = CoachContextBuilder.make(workouts: store, plans: plans, profile: profile,
+                                                weightUnit: .kg, heightUnit: .cm, shareHistory: false)
+        XCTAssertNil(private_.body)
+        XCTAssertTrue(private_.records.isEmpty)
+        XCTAssertTrue(private_.recentWorkouts.isEmpty)
+
+        // Nothing that identifies the person, and no gender, is ever included.
+        let json = String(decoding: try JSONEncoder().encode(shared), as: UTF8.self).lowercased()
+        for forbidden in ["email", "username", "gender", "female"] {
+            XCTAssertFalse(json.contains(forbidden), "context should not contain \(forbidden)")
+        }
+    }
 }
+

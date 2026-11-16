@@ -17,6 +17,11 @@ enum StorageKey {
     static let heightUnit = "heightUnit"
     static let hologramStyle = "hologramStyle"
     static let fadeHalfLifeDays = "fadeHalfLifeDays"
+    static let coachBaseURL = "coachBaseURL"
+    static let coachAppKey = "coachAppKey"
+    static let coachConsent = "coachConsent"
+    static let coachShareHistory = "coachShareHistory"
+    static let coachInstallID = "coachInstallID"
 }
 
 enum WeightUnit: String, CaseIterable, Identifiable {
