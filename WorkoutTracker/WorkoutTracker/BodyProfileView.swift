@@ -110,11 +110,11 @@ struct BodyProfileView: View {
             weightText = unit.format(kg: weightKg)
         }
         .onChange(of: weightText) { _, text in
-            // Update the model as the number is typed, ignoring anything that isn't a sensible weight.
+            // Update the model as the number is typed. Any positive weight is accepted.
             guard weightFocused,
                   let value = Double(text.replacingOccurrences(of: ",", with: ".")) else { return }
             let kg = unit.toKg(value)
-            if BodyProfile.weightRangeKg.contains(kg) { weightKg = kg }
+            if kg >= BodyProfile.minimumWeightKg { weightKg = kg }
         }
         .onChange(of: weightFocused) { _, focused in
             // Tidy the field once editing ends (and snap invalid input back to the saved weight).

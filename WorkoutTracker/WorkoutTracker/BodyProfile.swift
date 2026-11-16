@@ -37,8 +37,9 @@ struct BodyProfile: Equatable {
     var heightCm: Double = 172
 
     static let ageRange = 16...90
-    static let weightRangeKg = 35.0...200.0
-    static let heightRangeCm = 130.0...215.0
+    /// Weight has no upper limit; the 3D model just stops getting wider past a very high BMI.
+    static let minimumWeightKg = 1.0
+    static let heightRangeCm = 90.0...250.0
 
     init(gender: BodyGender = .neutral, age: Int = 28, weightKg: Double = 70, heightCm: Double = 172) {
         self.gender = gender
@@ -52,7 +53,7 @@ struct BodyProfile: Equatable {
         self.init(
             gender: BodyGender(rawValue: genderRaw) ?? .neutral,
             age: min(max(age, BodyProfile.ageRange.lowerBound), BodyProfile.ageRange.upperBound),
-            weightKg: min(max(weightKg, BodyProfile.weightRangeKg.lowerBound), BodyProfile.weightRangeKg.upperBound),
+            weightKg: max(weightKg, BodyProfile.minimumWeightKg),
             heightCm: min(max(heightCm, BodyProfile.heightRangeCm.lowerBound), BodyProfile.heightRangeCm.upperBound)
         )
     }

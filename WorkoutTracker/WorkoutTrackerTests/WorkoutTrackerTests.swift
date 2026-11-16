@@ -208,7 +208,10 @@ final class WorkoutTrackerTests: XCTestCase {
         XCTAssertGreaterThan(BodyProfile(gender: .neutral, age: 30, weightKg: 110, heightCm: 175).weightFactor, 0)
         XCTAssertEqual(BodyProfile(gender: .neutral, age: 30, weightKg: 400, heightCm: 175).weightFactor, 1)
         XCTAssertEqual(BodyGender.neutral.maleShare, 0.5)
-        // Out-of-range stored values are clamped.
+        // Weight is never capped; only the model's shape stops changing at extremes.
+        XCTAssertEqual(BodyProfile(genderRaw: "male", age: 30, weightKg: 350, heightCm: 180).weightKg, 350)
+        XCTAssertEqual(BodyProfile(genderRaw: "male", age: 30, weightKg: 350, heightCm: 180).weightFactor, 1)
+        // Out-of-range age and nonsense values are still sanitised.
         let clamped = BodyProfile(genderRaw: "bogus", age: 500, weightKg: -5, heightCm: 9999)
         XCTAssertEqual(clamped.gender, .neutral)
         XCTAssertEqual(clamped.age, BodyProfile.ageRange.upperBound)
