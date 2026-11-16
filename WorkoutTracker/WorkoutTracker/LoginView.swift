@@ -11,6 +11,8 @@ struct LoginView: View {
     @Binding var isLoggedIn: Bool
     @Binding var showingRegister: Bool
 
+    @AppStorage(StorageKey.userName) private var userName = ""
+
     @State private var username = ""
     @State private var password = ""
 
@@ -20,7 +22,7 @@ struct LoginView: View {
 
             Image(systemName: "figure.strengthtraining.traditional")
                 .font(.system(size: 70))
-                .foregroundStyle(.blue)
+                .foregroundStyle(Theme.accent)
 
             Text("Workout Tracker")
                 .font(.largeTitle)
@@ -32,22 +34,22 @@ struct LoginView: View {
             VStack(spacing: 12) {
                 TextField("Username", text: $username)
                     .textFieldStyle(.roundedBorder)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
 
                 SecureField("Password", text: $password)
                     .textFieldStyle(.roundedBorder)
             }
 
             Button {
+                if userName.isEmpty {
+                    userName = username
+                }
                 isLoggedIn = true
             } label: {
                 Text("Log In")
-                    .fontWeight(.semibold)
-                    .frame(maxWidth: .infinity)
-                    .padding()
-                    .background(.blue)
-                    .foregroundStyle(.white)
-                    .clipShape(RoundedRectangle(cornerRadius: 14))
             }
+            .buttonStyle(PrimaryButtonStyle())
             .disabled(username.isEmpty || password.isEmpty)
 
             Button("Create an account") {

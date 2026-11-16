@@ -20,6 +20,13 @@
 		904B5E852FABB43B008E659A /* SummaryCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = 904B5E842FABB43B008E659A /* SummaryCard.swift */; };
 		904B5E872FABB476008E659A /* AddWorkoutView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 904B5E862FABB476008E659A /* AddWorkoutView.swift */; };
 		904B5E892FABC04E008E659A /* RegisterView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 904B5E882FABC04E008E659A /* RegisterView.swift */; };
+		904B5E900000000000000001 /* MuscleGroup.swift in Sources */ = {isa = PBXBuildFile; fileRef = 904B5E900000000000000002 /* MuscleGroup.swift */; };
+		904B5E900000000000000003 /* Theme.swift in Sources */ = {isa = PBXBuildFile; fileRef = 904B5E900000000000000004 /* Theme.swift */; };
+		904B5E900000000000000005 /* WorkoutStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 904B5E900000000000000006 /* WorkoutStore.swift */; };
+		904B5E900000000000000007 /* BodyModelView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 904B5E900000000000000008 /* BodyModelView.swift */; };
+		904B5E900000000000000009 /* WorkoutResultView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 904B5E90000000000000000A /* WorkoutResultView.swift */; };
+		904B5E90000000000000000B /* MainTabView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 904B5E90000000000000000C /* MainTabView.swift */; };
+		904B5E90000000000000000D /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 904B5E90000000000000000E /* SettingsView.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -56,6 +63,13 @@
 		904B5E842FABB43B008E659A /* SummaryCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SummaryCard.swift; sourceTree = "<group>"; };
 		904B5E862FABB476008E659A /* AddWorkoutView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AddWorkoutView.swift; sourceTree = "<group>"; };
 		904B5E882FABC04E008E659A /* RegisterView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RegisterView.swift; sourceTree = "<group>"; };
+		904B5E900000000000000002 /* MuscleGroup.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MuscleGroup.swift; sourceTree = "<group>"; };
+		904B5E900000000000000004 /* Theme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Theme.swift; sourceTree = "<group>"; };
+		904B5E900000000000000006 /* WorkoutStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkoutStore.swift; sourceTree = "<group>"; };
+		904B5E900000000000000008 /* BodyModelView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BodyModelView.swift; sourceTree = "<group>"; };
+		904B5E90000000000000000A /* WorkoutResultView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkoutResultView.swift; sourceTree = "<group>"; };
+		904B5E90000000000000000C /* MainTabView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MainTabView.swift; sourceTree = "<group>"; };
+		904B5E90000000000000000E /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -114,6 +128,13 @@
 				904B5E822FABB414008E659A /* WorkoutHomeView.swift */,
 				904B5E862FABB476008E659A /* AddWorkoutView.swift */,
 				904B5E882FABC04E008E659A /* RegisterView.swift */,
+				904B5E900000000000000002 /* MuscleGroup.swift */,
+				904B5E900000000000000004 /* Theme.swift */,
+				904B5E900000000000000006 /* WorkoutStore.swift */,
+				904B5E900000000000000008 /* BodyModelView.swift */,
+				904B5E90000000000000000A /* WorkoutResultView.swift */,
+				904B5E90000000000000000C /* MainTabView.swift */,
+				904B5E90000000000000000E /* SettingsView.swift */,
 				904B5E4C2FAB00FB008E659A /* Assets.xcassets */,
 				904B5E4E2FAB00FB008E659A /* Preview Content */,
 			);
@@ -283,6 +304,13 @@
 				904B5E892FABC04E008E659A /* RegisterView.swift in Sources */,
 				904B5E492FAB00F9008E659A /* WorkoutTrackerApp.swift in Sources */,
 				904B5E812FABB3D8008E659A /* Workout.swift in Sources */,
+				904B5E900000000000000001 /* MuscleGroup.swift in Sources */,
+				904B5E900000000000000003 /* Theme.swift in Sources */,
+				904B5E900000000000000005 /* WorkoutStore.swift in Sources */,
+				904B5E900000000000000007 /* BodyModelView.swift in Sources */,
+				904B5E900000000000000009 /* WorkoutResultView.swift in Sources */,
+				904B5E90000000000000000B /* MainTabView.swift in Sources */,
+				904B5E90000000000000000D /* SettingsView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -448,6 +476,7 @@
 				DEVELOPMENT_ASSET_PATHS = "\"WorkoutTracker/Preview Content\"";
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_CFBundleDisplayName = "Workout Tracker";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
@@ -476,6 +505,7 @@
 				DEVELOPMENT_ASSET_PATHS = "\"WorkoutTracker/Preview Content\"";
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_CFBundleDisplayName = "Workout Tracker";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;

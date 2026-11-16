@@ -12,6 +12,8 @@ struct RegisterView: View {
     @Binding var isLoggedIn: Bool
     @Binding var showingRegister: Bool
 
+    @AppStorage(StorageKey.userName) private var userName = ""
+
     @State private var name = ""
     @State private var email = ""
     @State private var password = ""
@@ -31,7 +33,7 @@ struct RegisterView: View {
 
             Image(systemName: "person.crop.circle.badge.plus")
                 .font(.system(size: 70))
-                .foregroundStyle(.blue)
+                .foregroundStyle(Theme.accent)
 
             Text("Create Account")
                 .font(.largeTitle)
@@ -45,6 +47,7 @@ struct RegisterView: View {
                     .textFieldStyle(.roundedBorder)
                     .keyboardType(.emailAddress)
                     .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
 
                 SecureField("Password", text: $password)
                     .textFieldStyle(.roundedBorder)
@@ -60,16 +63,12 @@ struct RegisterView: View {
             }
 
             Button {
+                userName = name.trimmingCharacters(in: .whitespacesAndNewlines)
                 isLoggedIn = true
             } label: {
                 Text("Create Account")
-                    .fontWeight(.semibold)
-                    .frame(maxWidth: .infinity)
-                    .padding()
-                    .background(formIsValid ? .blue : .gray)
-                    .foregroundStyle(.white)
-                    .clipShape(RoundedRectangle(cornerRadius: 14))
             }
+            .buttonStyle(PrimaryButtonStyle())
             .disabled(!formIsValid)
 
             Button("Already have an account? Log in") {

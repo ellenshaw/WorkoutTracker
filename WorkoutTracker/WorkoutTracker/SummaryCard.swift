@@ -2,10 +2,7 @@
 //  SummaryCard.swift
 //  WorkoutTracker
 //
-//  Created by ellen hsiao on 5/6/26.
-//
 
-import Foundation
 import SwiftUI
 
 struct SummaryCard: View {
@@ -14,15 +11,14 @@ struct SummaryCard: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("This Week")
+            Text("Last 7 Days")
                 .font(.headline)
 
             HStack {
                 VStack(alignment: .leading) {
                     Text("\(workoutCount)")
-                        .font(.largeTitle)
-                        .fontWeight(.bold)
-                    Text("workouts")
+                        .font(.largeTitle.bold())
+                    Text(workoutCount == 1 ? "workout" : "workouts")
                         .foregroundStyle(.secondary)
                 }
 
@@ -30,8 +26,7 @@ struct SummaryCard: View {
 
                 VStack(alignment: .leading) {
                     Text("\(totalMinutes)")
-                        .font(.largeTitle)
-                        .fontWeight(.bold)
+                        .font(.largeTitle.bold())
                     Text("minutes")
                         .foregroundStyle(.secondary)
                 }
@@ -40,9 +35,8 @@ struct SummaryCard: View {
             Text(workoutCount >= 3 ? "🔥 Strong week. Keep it going." : "💪 Add more workouts to build your streak.")
                 .font(.subheadline)
         }
-        .padding()
-        .background(.thinMaterial)
-        .clipShape(RoundedRectangle(cornerRadius: 20))
-        .padding()
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .cardStyle()
+        .accessibilityElement(children: .combine)
     }
 }

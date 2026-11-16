@@ -2,18 +2,16 @@
 //  ContentView.swift
 //  WorkoutTracker
 //
-//  Created by ellen hsiao on 5/5/26.
-//
 
 import SwiftUI
 
 struct ContentView: View {
-    @State private var isLoggedIn = false
+    @AppStorage(StorageKey.isLoggedIn) private var isLoggedIn = false
     @State private var showingRegister = false
 
     var body: some View {
         if isLoggedIn {
-            WorkoutHomeView()
+            MainTabView()
         } else if showingRegister {
             RegisterView(
                 isLoggedIn: $isLoggedIn,
@@ -30,4 +28,5 @@ struct ContentView: View {
 
 #Preview {
     ContentView()
+        .environmentObject(WorkoutStore())
 }

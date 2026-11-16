@@ -2,16 +2,20 @@
 //  WorkoutTrackerApp.swift
 //  WorkoutTracker
 //
-//  Created by ellen hsiao on 5/5/26.
-//
 
 import SwiftUI
 
 @main
 struct WorkoutTrackerApp: App {
+    @StateObject private var store = WorkoutStore()
+    @AppStorage(StorageKey.appearance) private var appearance = AppearanceMode.system.rawValue
+
     var body: some Scene {
         WindowGroup {
             ContentView()
+                .environmentObject(store)
+                .tint(Theme.accent)
+                .preferredColorScheme(AppearanceMode(rawValue: appearance)?.colorScheme)
         }
     }
 }
