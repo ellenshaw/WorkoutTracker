@@ -96,25 +96,52 @@ enum WorkoutCategory: String, CaseIterable, Codable, Identifiable {
         }
     }
 
-    /// A starting point for the muscle picker; the user can change anything.
-    var suggestedMuscles: [MuscleGroup: HeatLevel] {
+    /// Distinct from the yellow / orange / red heat colors so the two never get confused.
+    var tint: Color {
         switch self {
-        case .strength:
-            return [:]
-        case .cardio:
-            return [.quads: .moderate, .hamstrings: .moderate, .calves: .moderate, .glutes: .moderate, .abs: .light]
-        case .climbing:
-            return [.forearms: .heavy, .lats: .heavy, .biceps: .moderate, .shoulders: .moderate, .abs: .light]
-        case .sport:
-            return [.quads: .light, .calves: .light, .shoulders: .light, .abs: .light]
-        case .mobility:
-            return [.hamstrings: .light, .lowerBack: .light, .glutes: .light]
+        case .strength: return Color(red: 0.30, green: 0.56, blue: 1.0)
+        case .cardio: return Color(red: 0.90, green: 0.38, blue: 0.70)
+        case .climbing: return Color(red: 0.18, green: 0.74, blue: 0.70)
+        case .sport: return Color(red: 0.36, green: 0.78, blue: 0.40)
+        case .mobility: return Color(red: 0.62, green: 0.47, blue: 0.96)
+        }
+    }
+
+    var subtitle: String {
+        switch self {
+        case .strength: return "Lifts, sets and reps"
+        case .cardio: return "Run, ride, swim and more"
+        case .climbing: return "Boulder, rope, hangboard"
+        case .sport: return "Court, field and combat"
+        case .mobility: return "Yoga, stretching, pilates"
         }
     }
 }
 
 /// Pure calculation so it can be unit tested without a store.
 enum HeatCalculator {
+    /// Turns a strength session into muscle heat. A set counts 1 for each primary muscle and
+    /// 0.5 for each secondary muscle; 4+ points is moderate, 8+ is heavy.
+    static func strengthHeat(exercises: [LoggedExercise]) -> [MuscleGroup: HeatLevel] {
+        var scores: [MuscleGroup: Double] = [:]
+        for exercise in exercises {
+            let sets = Double(exercise.sets.count)
+            for muscle in exercise.primary { scores[muscle, default: 0] += sets }
+            for muscle in exercise.secondary { scores[muscle, default: 0] += sets * 0.5 }
+        }
+        var result: [MuscleGroup: HeatLevel] = [:]
+        for (muscle, score) in scores {
+            if score >= 8 {
+                result[muscle] = .heavy
+            } else if score >= 4 {
+                result[muscle] = .moderate
+            } else if score > 0 {
+                result[muscle] = .light
+            }
+        }
+        return result
+    }
+
     /// Combines recent workouts into one heat level per muscle.
     ///
     /// Each workout contributes `level × (duration / 45 min)`, with the duration factor clamped

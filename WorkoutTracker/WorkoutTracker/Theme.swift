@@ -9,6 +9,28 @@ enum StorageKey {
     static let isLoggedIn = "isLoggedIn"
     static let userName = "userName"
     static let appearance = "appearance"
+    static let weightUnit = "weightUnit"
+}
+
+enum WeightUnit: String, CaseIterable, Identifiable {
+    case kg, lb
+
+    var id: String { rawValue }
+    var symbol: String { rawValue }
+
+    func fromKg(_ kg: Double) -> Double {
+        self == .kg ? kg : kg * 2.20462262
+    }
+
+    func toKg(_ value: Double) -> Double {
+        self == .kg ? value : value / 2.20462262
+    }
+
+    /// "60", "62.5" — never more than one decimal.
+    func format(kg: Double) -> String {
+        let value = (fromKg(kg) * 10).rounded() / 10
+        return value == value.rounded() ? String(Int(value)) : String(format: "%.1f", value)
+    }
 }
 
 enum AppearanceMode: String, CaseIterable, Identifiable {
@@ -45,6 +67,17 @@ extension View {
             .padding()
             .background(Color(.secondarySystemGroupedBackground))
             .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+    }
+}
+
+extension View {
+    /// Filled rounded text-field look used on the logging screens.
+    func fieldStyle() -> some View {
+        self
+            .padding(.horizontal, 12)
+            .padding(.vertical, 10)
+            .background(Color(.tertiarySystemFill))
+            .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
     }
 }
 

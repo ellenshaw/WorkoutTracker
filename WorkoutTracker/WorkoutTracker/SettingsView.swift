@@ -9,6 +9,7 @@ struct SettingsView: View {
     @EnvironmentObject private var store: WorkoutStore
 
     @AppStorage(StorageKey.appearance) private var appearance = AppearanceMode.system.rawValue
+    @AppStorage(StorageKey.weightUnit) private var weightUnit = WeightUnit.kg.rawValue
     @AppStorage(StorageKey.userName) private var userName = ""
     @AppStorage(StorageKey.isLoggedIn) private var isLoggedIn = false
 
@@ -27,6 +28,15 @@ struct SettingsView: View {
                     Picker("Theme", selection: $appearance) {
                         ForEach(AppearanceMode.allCases) { mode in
                             Text(mode.title).tag(mode.rawValue)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+                }
+
+                Section("Units") {
+                    Picker("Weight", selection: $weightUnit) {
+                        ForEach(WeightUnit.allCases) { unit in
+                            Text(unit.symbol).tag(unit.rawValue)
                         }
                     }
                     .pickerStyle(.segmented)

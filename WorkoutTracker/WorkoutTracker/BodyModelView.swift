@@ -146,14 +146,12 @@ struct BodyModelView: UIViewRepresentable {
             scene.rootNode.addChildNode(fill)
         }
 
-        /// Adds one piece of the body. Pass `muscle` to make it tint with that muscle's heat.
-        private func add(_ geometry: SCNGeometry,
-                         at position: SCNVector3,
-                         muscle: MuscleGroup? = nil,
-                         scale: SCNVector3 = SCNVector3(1, 1, 1)) {
+        private func addPart(_ geometry: SCNGeometry, muscle: MuscleGroup?) {
             let material = SCNMaterial()
             material.lightingModel = .blinn
-            material.specular.contents = UIColor(white: 0.3, alpha: 1)
+            material.diffuse.contents = UIColor.gray
+            material.specular.contents = UIColor(white: 0.22, alpha: 1)
+            material.shininess = 0.35
             geometry.materials = [material]
 
             if let muscle {
@@ -161,69 +159,37 @@ struct BodyModelView: UIViewRepresentable {
             } else {
                 baseMaterials.append(material)
             }
-
-            let node = SCNNode(geometry: geometry)
-            node.position = position
-            node.scale = scale
-            figure.addChildNode(node)
+            figure.addChildNode(SCNNode(geometry: geometry))
         }
 
         /// Front of the figure faces +z (toward the camera). Feet at y = 0, head top at y ≈ 7.
         private func buildFigure() {
-            let sides: [Float] = [-1, 1]
+            var keysByName: [String: [BodyKey]] = [:]
 
-            // Head, neck, torso and pelvis (neutral base)
-            add(SCNSphere(radius: 0.46), at: SCNVector3(0, 6.55, 0))
-            add(SCNCylinder(radius: 0.17, height: 0.4), at: SCNVector3(0, 6.05, 0))
-            add(SCNBox(width: 1.7, height: 2.5, length: 0.78, chamferRadius: 0.32), at: SCNVector3(0, 4.55, 0))
-            add(SCNBox(width: 1.5, height: 0.7, length: 0.74, chamferRadius: 0.3), at: SCNVector3(0, 3.2, 0))
-
-            // Front of the torso
-            for s in sides {
-                add(SCNBox(width: 0.8, height: 0.72, length: 0.22, chamferRadius: 0.12),
-                    at: SCNVector3(s * 0.42, 5.15, 0.33), muscle: .chest)
-                // Obliques wrap the sides, so they show from both front and back.
-                add(SCNBox(width: 0.22, height: 1.1, length: 0.55, chamferRadius: 0.08),
-                    at: SCNVector3(s * 0.8, 4.2, 0), muscle: .obliques)
-                // Six-pack: three rows per side.
-                for y: Float in [4.65, 4.2, 3.75] {
-                    add(SCNBox(width: 0.36, height: 0.38, length: 0.2, chamferRadius: 0.08),
-                        at: SCNVector3(s * 0.2, y, 0.35), muscle: .abs)
+            for tube in BodySpec.tubes {
+                keysByName[tube.name] = tube.keys
+                for side in (tube.mirrored ? [Float(-1), 1] : [Float(1)]) {
+                    addPart(BodyMesher.tube(tube.keys, side: side), muscle: nil)
                 }
             }
 
-            // Back of the torso
-            add(SCNBox(width: 1.2, height: 0.55, length: 0.2, chamferRadius: 0.1),
-                at: SCNVector3(0, 5.6, -0.34), muscle: .traps)
-            add(SCNBox(width: 0.9, height: 0.8, length: 0.2, chamferRadius: 0.1),
-                at: SCNVector3(0, 3.7, -0.34), muscle: .lowerBack)
-            for s in sides {
-                add(SCNBox(width: 0.7, height: 1.3, length: 0.2, chamferRadius: 0.1),
-                    at: SCNVector3(s * 0.5, 4.75, -0.34), muscle: .lats)
+            for patch in BodySpec.patches {
+                guard let keys = keysByName[patch.host] else { continue }
+                for side in (patch.mirrored ? [Float(-1), 1] : [Float(1)]) {
+                    addPart(BodyMesher.patch(keys, side: side, spec: patch), muscle: patch.muscle)
+                }
             }
 
-            // Arms
-            for s in sides {
-                add(SCNSphere(radius: 0.36), at: SCNVector3(s * 1.05, 5.45, 0), muscle: .shoulders)
-                add(SCNCapsule(capRadius: 0.24, height: 1.5), at: SCNVector3(s * 1.22, 4.6, 0))
-                add(SCNCapsule(capRadius: 0.17, height: 1.15), at: SCNVector3(s * 1.22, 4.65, 0.15), muscle: .biceps)
-                add(SCNCapsule(capRadius: 0.17, height: 1.15), at: SCNVector3(s * 1.22, 4.65, -0.15), muscle: .triceps)
-                add(SCNCapsule(capRadius: 0.21, height: 1.45), at: SCNVector3(s * 1.27, 3.25, 0), muscle: .forearms)
-                add(SCNSphere(radius: 0.17), at: SCNVector3(s * 1.3, 2.4, 0))
-            }
-
-            // Legs
-            for s in sides {
-                add(SCNSphere(radius: 0.42), at: SCNVector3(s * 0.38, 3.05, -0.18),
-                    muscle: .glutes, scale: SCNVector3(1, 1.05, 0.85))
-                add(SCNCapsule(capRadius: 0.3, height: 2.1), at: SCNVector3(s * 0.4, 1.95, 0))
-                add(SCNCapsule(capRadius: 0.31, height: 1.85), at: SCNVector3(s * 0.4, 2.05, 0.1), muscle: .quads)
-                add(SCNCapsule(capRadius: 0.29, height: 1.7), at: SCNVector3(s * 0.4, 2.0, -0.1), muscle: .hamstrings)
-                add(SCNSphere(radius: 0.27), at: SCNVector3(s * 0.4, 1.1, 0))
-                add(SCNCapsule(capRadius: 0.19, height: 1.5), at: SCNVector3(s * 0.4, 0.75, 0.03))
-                add(SCNCapsule(capRadius: 0.23, height: 1.45), at: SCNVector3(s * 0.4, 0.75, -0.07), muscle: .calves)
-                add(SCNBox(width: 0.36, height: 0.18, length: 0.7, chamferRadius: 0.08), at: SCNVector3(s * 0.4, 0.09, 0.15))
-            }
+            // A soft disc under the feet to ground the figure.
+            let floor = SCNCylinder(radius: 1.9, height: 0.02)
+            let floorMaterial = SCNMaterial()
+            floorMaterial.lightingModel = .constant
+            floorMaterial.diffuse.contents = UIColor(red: 0.30, green: 0.56, blue: 1.0, alpha: 1)
+            floorMaterial.transparency = 0.16
+            floor.materials = [floorMaterial]
+            let floorNode = SCNNode(geometry: floor)
+            floorNode.position = SCNVector3(0, -0.02, 0)
+            scene.rootNode.addChildNode(floorNode)
         }
     }
 }

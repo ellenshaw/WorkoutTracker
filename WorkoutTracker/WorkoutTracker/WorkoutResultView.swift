@@ -12,6 +12,15 @@ struct WorkoutResultView: View {
     var isNew = false
     var onDone: () -> Void = {}
 
+    @EnvironmentObject private var store: WorkoutStore
+    @AppStorage(StorageKey.weightUnit) private var unitRaw = WeightUnit.kg.rawValue
+
+    private var unit: WeightUnit { WeightUnit(rawValue: unitRaw) ?? .kg }
+
+    private var isPinned: Bool {
+        store.workouts.first(where: { $0.id == workout.id })?.isPinned ?? false
+    }
+
     var body: some View {
         ScrollView {
             VStack(spacing: 20) {
@@ -26,6 +35,10 @@ struct WorkoutResultView: View {
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .cardStyle()
+
+                if !workout.exercises.isEmpty {
+                    exercisesCard
+                }
 
                 if !workout.notes.isEmpty {
                     VStack(alignment: .leading, spacing: 6) {
@@ -45,6 +58,14 @@ struct WorkoutResultView: View {
         .navigationBarTitleDisplayMode(.inline)
         .navigationBarBackButtonHidden(isNew)
         .toolbar {
+            ToolbarItem(placement: .primaryAction) {
+                Button {
+                    store.togglePin(workout.id)
+                } label: {
+                    Image(systemName: isPinned ? "pin.fill" : "pin")
+                }
+                .accessibilityLabel(isPinned ? "Unpin workout" : "Pin workout")
+            }
             if isNew {
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Done", action: onDone)
@@ -52,6 +73,41 @@ struct WorkoutResultView: View {
                 }
             }
         }
+    }
+
+    private var exercisesCard: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack {
+                Text("Exercises")
+                    .font(.headline)
+                Spacer()
+                Text("\(unit.format(kg: workout.totalVolumeKg)) \(unit.symbol) total")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+            }
+
+            ForEach(workout.exercises) { exercise in
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(exercise.name)
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(Theme.accent)
+
+                    ForEach(Array(exercise.sets.enumerated()), id: \.element.id) { index, set in
+                        HStack {
+                            Text("Set \(index + 1)")
+                                .foregroundStyle(.secondary)
+                            Spacer()
+                            Text("\(unit.format(kg: set.weightKg)) \(unit.symbol) × \(set.reps)")
+                                .monospacedDigit()
+                        }
+                        .font(.subheadline)
+                    }
+                }
+                .accessibilityElement(children: .combine)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .cardStyle()
     }
 
     private var header: some View {

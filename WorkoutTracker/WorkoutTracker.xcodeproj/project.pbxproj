@@ -27,6 +27,12 @@
 		904B5E900000000000000009 /* WorkoutResultView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 904B5E90000000000000000A /* WorkoutResultView.swift */; };
 		904B5E90000000000000000B /* MainTabView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 904B5E90000000000000000C /* MainTabView.swift */; };
 		904B5E90000000000000000D /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 904B5E90000000000000000E /* SettingsView.swift */; };
+		904B5EA00000000000000001 /* BodySpec.swift in Sources */ = {isa = PBXBuildFile; fileRef = 904B5EA00000000000000002 /* BodySpec.swift */; };
+		904B5EA00000000000000003 /* BodyMesher.swift in Sources */ = {isa = PBXBuildFile; fileRef = 904B5EA00000000000000004 /* BodyMesher.swift */; };
+		904B5EA00000000000000005 /* ExerciseLibrary.swift in Sources */ = {isa = PBXBuildFile; fileRef = 904B5EA00000000000000006 /* ExerciseLibrary.swift */; };
+		904B5EA00000000000000007 /* LogStrengthView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 904B5EA00000000000000008 /* LogStrengthView.swift */; };
+		904B5EA00000000000000009 /* LogActivityView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 904B5EA0000000000000000A /* LogActivityView.swift */; };
+		904B5EA0000000000000000B /* ExercisePickerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 904B5EA0000000000000000C /* ExercisePickerView.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -70,6 +76,12 @@
 		904B5E90000000000000000A /* WorkoutResultView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkoutResultView.swift; sourceTree = "<group>"; };
 		904B5E90000000000000000C /* MainTabView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MainTabView.swift; sourceTree = "<group>"; };
 		904B5E90000000000000000E /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
+		904B5EA00000000000000002 /* BodySpec.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BodySpec.swift; sourceTree = "<group>"; };
+		904B5EA00000000000000004 /* BodyMesher.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BodyMesher.swift; sourceTree = "<group>"; };
+		904B5EA00000000000000006 /* ExerciseLibrary.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExerciseLibrary.swift; sourceTree = "<group>"; };
+		904B5EA00000000000000008 /* LogStrengthView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LogStrengthView.swift; sourceTree = "<group>"; };
+		904B5EA0000000000000000A /* LogActivityView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LogActivityView.swift; sourceTree = "<group>"; };
+		904B5EA0000000000000000C /* ExercisePickerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExercisePickerView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -128,6 +140,12 @@
 				904B5E822FABB414008E659A /* WorkoutHomeView.swift */,
 				904B5E862FABB476008E659A /* AddWorkoutView.swift */,
 				904B5E882FABC04E008E659A /* RegisterView.swift */,
+				904B5EA00000000000000002 /* BodySpec.swift */,
+				904B5EA00000000000000004 /* BodyMesher.swift */,
+				904B5EA00000000000000006 /* ExerciseLibrary.swift */,
+				904B5EA00000000000000008 /* LogStrengthView.swift */,
+				904B5EA0000000000000000A /* LogActivityView.swift */,
+				904B5EA0000000000000000C /* ExercisePickerView.swift */,
 				904B5E900000000000000002 /* MuscleGroup.swift */,
 				904B5E900000000000000004 /* Theme.swift */,
 				904B5E900000000000000006 /* WorkoutStore.swift */,
@@ -304,6 +322,12 @@
 				904B5E892FABC04E008E659A /* RegisterView.swift in Sources */,
 				904B5E492FAB00F9008E659A /* WorkoutTrackerApp.swift in Sources */,
 				904B5E812FABB3D8008E659A /* Workout.swift in Sources */,
+				904B5EA00000000000000001 /* BodySpec.swift in Sources */,
+				904B5EA00000000000000003 /* BodyMesher.swift in Sources */,
+				904B5EA00000000000000005 /* ExerciseLibrary.swift in Sources */,
+				904B5EA00000000000000007 /* LogStrengthView.swift in Sources */,
+				904B5EA00000000000000009 /* LogActivityView.swift in Sources */,
+				904B5EA0000000000000000B /* ExercisePickerView.swift in Sources */,
 				904B5E900000000000000001 /* MuscleGroup.swift in Sources */,
 				904B5E900000000000000003 /* Theme.swift in Sources */,
 				904B5E900000000000000005 /* WorkoutStore.swift in Sources */,
