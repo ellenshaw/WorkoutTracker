@@ -69,7 +69,7 @@ struct SettingsView: View {
                 Section {
                     LabeledContent("Version", value: version)
                 } footer: {
-                    Text("Your workouts are stored only on this device.")
+                    Text("Your workouts are stored only on this device. The 3D body is based on the MakeHuman base mesh (CC0).")
                 }
             }
             .navigationTitle("Settings")

@@ -12,10 +12,6 @@ import SceneKit
 /// Colors shared by the 3D scene and the card around it.
 enum Hologram {
     static let background = UIColor(red: 0.03, green: 0.05, blue: 0.10, alpha: 1)
-    static let bodyFill = UIColor(red: 0.02, green: 0.08, blue: 0.18, alpha: 1)
-    static let muscleFill = UIColor(red: 0.04, green: 0.13, blue: 0.27, alpha: 1)
-    static let bodyLine = UIColor(red: 0.22, green: 0.62, blue: 1.0, alpha: 1)
-    static let muscleLine = UIColor(red: 0.30, green: 0.68, blue: 1.0, alpha: 1)
     static let glow = UIColor(red: 0.25, green: 0.60, blue: 1.0, alpha: 1)
 }
 
@@ -47,11 +43,25 @@ struct BodyModelView: UIViewRepresentable {
     // MARK: - Coordinator
 
     final class Coordinator: NSObject {
+        typealias Vec = SIMD3<Float>
+
         let scene = SCNScene()
 
         private let figure = SCNNode()
-        private var muscleFills: [MuscleGroup: [SCNMaterial]] = [:]
-        private var muscleLines: [MuscleGroup: [SCNMaterial]] = [:]
+        private let fillNode = SCNNode()
+        private let lineNode = SCNNode()
+        private let haloNode = SCNNode()
+        private let fillMaterial = Coordinator.constantMaterial(.white)
+        private let lineMaterial = Coordinator.constantMaterial(.white)
+
+        private var mesh: BodyMeshData?
+        private var contours: BodyContours?
+        private var vertexSource: SCNGeometrySource?
+        private var normalSource: SCNGeometrySource?
+        private var fillElement: SCNGeometryElement?
+        private var lineVertexSource: SCNGeometrySource?
+        private var lineElement: SCNGeometryElement?
+
         private var currentBodyType: BodyType?
         private var lastHeat: [MuscleGroup: HeatLevel]?
         private var lastFlipToken = 0
@@ -65,33 +75,29 @@ struct BodyModelView: UIViewRepresentable {
 
         func update(bodyType: BodyType, heat: [MuscleGroup: HeatLevel]) {
             if bodyType != currentBodyType {
-                rebuildFigure(for: bodyType)
+                loadBody(bodyType)
             }
-            apply(heat: heat)
+            applyHeat(heat)
         }
 
-        private func apply(heat: [MuscleGroup: HeatLevel]) {
-            guard heat != lastHeat else { return }
-            let animated = lastHeat != nil
+        private func applyHeat(_ heat: [MuscleGroup: HeatLevel]) {
+            guard heat != lastHeat, let mesh, let contours,
+                  let vertexSource, let normalSource, let fillElement,
+                  let lineVertexSource, let lineElement else { return }
             lastHeat = heat
 
-            SCNTransaction.begin()
-            SCNTransaction.animationDuration = animated ? 0.45 : 0
-            for muscle in MuscleGroup.allCases {
-                let level = heat[muscle] ?? HeatLevel.none
-                let line: UIColor
-                let fill: UIColor
-                if level == HeatLevel.none {
-                    line = Hologram.muscleLine
-                    fill = Hologram.muscleFill
-                } else {
-                    line = level.uiColor
-                    fill = level.uiColor.withAlphaComponent(1).scaled(by: 0.32)
-                }
-                muscleLines[muscle]?.forEach { $0.diffuse.contents = line }
-                muscleFills[muscle]?.forEach { $0.diffuse.contents = fill }
-            }
-            SCNTransaction.commit()
+            let colors = BodyAsset.vertexColors(for: mesh, heat: heat)
+            let lineColors = BodyAsset.lineColors(for: contours, vertexLineColors: colors.line)
+
+            let fill = SCNGeometry(sources: [vertexSource, normalSource, Coordinator.colorSource(colors.fill)],
+                                   elements: [fillElement])
+            fill.materials = [fillMaterial]
+            fillNode.geometry = fill
+
+            let lines = SCNGeometry(sources: [lineVertexSource, Coordinator.colorSource(lineColors)],
+                                    elements: [lineElement])
+            lines.materials = [lineMaterial]
+            lineNode.geometry = lines
         }
 
         func flip(ifTokenChanged token: Int) {
@@ -123,6 +129,9 @@ struct BodyModelView: UIViewRepresentable {
         private func buildScene() {
             scene.background.contents = Hologram.background
             scene.rootNode.addChildNode(figure)
+            figure.addChildNode(fillNode)
+            figure.addChildNode(lineNode)
+            figure.addChildNode(haloNode)
 
             let camera = SCNNode()
             camera.camera = SCNCamera()
@@ -138,13 +147,14 @@ struct BodyModelView: UIViewRepresentable {
 
             // A faint glowing disc under the feet.
             let floor = SCNCylinder(radius: 1.9, height: 0.02)
-            floor.materials = [constantMaterial(Hologram.glow, alpha: 0.18, additive: true)]
+            let floorMaterial = Coordinator.constantMaterial(Hologram.glow, alpha: 0.18, additive: true)
+            floor.materials = [floorMaterial]
             let floorNode = SCNNode(geometry: floor)
             floorNode.position = SCNVector3(0, -0.02, 0)
             scene.rootNode.addChildNode(floorNode)
         }
 
-        private func constantMaterial(_ color: UIColor, alpha: CGFloat = 1, additive: Bool = false) -> SCNMaterial {
+        private static func constantMaterial(_ color: UIColor, alpha: CGFloat = 1, additive: Bool = false) -> SCNMaterial {
             let material = SCNMaterial()
             material.lightingModel = .constant
             material.diffuse.contents = color
@@ -156,69 +166,53 @@ struct BodyModelView: UIViewRepresentable {
             return material
         }
 
-        private func rebuildFigure(for type: BodyType) {
+        private static func colorSource(_ colors: [SIMD4<Float>]) -> SCNGeometrySource {
+            let data = colors.withUnsafeBufferPointer { Data(buffer: $0) }
+            return SCNGeometrySource(data: data,
+                                     semantic: .color,
+                                     vectorCount: colors.count,
+                                     usesFloatComponents: true,
+                                     componentsPerVector: 4,
+                                     bytesPerComponent: MemoryLayout<Float>.size,
+                                     dataOffset: 0,
+                                     dataStride: MemoryLayout<SIMD4<Float>>.stride)
+        }
+
+        private static func scnVectors(_ vectors: [Vec]) -> [SCNVector3] {
+            vectors.map { SCNVector3($0.x, $0.y, $0.z) }
+        }
+
+        /// Loads the mesh for a body type and builds the parts that never change with heat.
+        private func loadBody(_ type: BodyType) {
             currentBodyType = type
             lastHeat = nil
-            muscleFills = [:]
-            muscleLines = [:]
-            figure.childNodes.forEach { $0.removeFromParentNode() }
+            guard let mesh = BodyAsset.load(type) else { return }
+            self.mesh = mesh
 
-            var tubeKeys: [String: [BodyKey]] = [:]
+            let contours = BodyAsset.contours(for: mesh)
+            self.contours = contours
 
-            for tube in BodySpec.tubes(for: type) {
-                tubeKeys[tube.name] = tube.keys
-                for side in (tube.mirrored ? [Float(-1), 1] : [Float(1)]) {
-                    let grid = BodyMesher.tubeGrid(tube.keys, side: side)
+            vertexSource = SCNGeometrySource(vertices: Coordinator.scnVectors(mesh.positions))
+            normalSource = SCNGeometrySource(normals: Coordinator.scnVectors(mesh.normals))
+            fillElement = SCNGeometryElement(indices: mesh.triangles.map { Int32($0) }, primitiveType: .triangles)
 
-                    // Dark translucent body.
-                    let fill = SCNNode(geometry: BodyMesher.tubeMesh(grid))
-                    fill.geometry?.materials = [constantMaterial(Hologram.bodyFill)]
-                    figure.addChildNode(fill)
+            lineVertexSource = SCNGeometrySource(vertices: Coordinator.scnVectors(contours.positions))
+            lineElement = SCNGeometryElement(indices: (0..<contours.positions.count).map { Int32($0) },
+                                             primitiveType: .line)
 
-                    // Glowing contour lines.
-                    let lines = SCNNode(geometry: BodyMesher.contours(grid, wrap: true))
-                    lines.geometry?.materials = [constantMaterial(Hologram.bodyLine)]
-                    figure.addChildNode(lines)
-
-                    // Soft rim glow: an inflated shell seen only from behind its edges.
-                    let halo = SCNNode(geometry: BodyMesher.tubeMesh(grid, inflate: 0.07))
-                    let haloMaterial = constantMaterial(Hologram.glow, alpha: 0.16, additive: true)
-                    haloMaterial.cullMode = .front
-                    halo.geometry?.materials = [haloMaterial]
-                    halo.renderingOrder = 10
-                    figure.addChildNode(halo)
-                }
-            }
-
-            for patch in BodySpec.patches(for: type) {
-                guard let keys = tubeKeys[patch.host] else { continue }
-                for side in (patch.mirrored ? [Float(-1), 1] : [Float(1)]) {
-                    let grid = BodyMesher.patchGrid(keys, side: side, spec: patch)
-
-                    let fillMaterial = constantMaterial(Hologram.muscleFill)
-                    let fill = SCNNode(geometry: BodyMesher.patchMesh(grid))
-                    fill.geometry?.materials = [fillMaterial]
-                    figure.addChildNode(fill)
-
-                    let lineMaterial = constantMaterial(Hologram.muscleLine)
-                    let lines = SCNNode(geometry: BodyMesher.contours(grid, wrap: false))
-                    lines.geometry?.materials = [lineMaterial]
-                    figure.addChildNode(lines)
-
-                    muscleFills[patch.muscle, default: []].append(fillMaterial)
-                    muscleLines[patch.muscle, default: []].append(lineMaterial)
-                }
-            }
+            // Soft rim glow: a slightly inflated copy, drawn only where its far side peeks out.
+            let inflated = zip(mesh.positions, mesh.normals).map { $0 + $1 * 0.07 }
+            let halo = SCNGeometry(
+                sources: [SCNGeometrySource(vertices: Coordinator.scnVectors(inflated)),
+                          SCNGeometrySource(normals: Coordinator.scnVectors(mesh.normals))],
+                elements: [fillElement!]
+            )
+            let haloMaterial = Coordinator.constantMaterial(Hologram.glow, alpha: 0.16, additive: true)
+            haloMaterial.cullMode = .front
+            halo.materials = [haloMaterial]
+            haloNode.geometry = halo
+            haloNode.renderingOrder = 10
         }
-    }
-}
-
-private extension UIColor {
-    /// Darkens a color toward black, keeping it fully opaque.
-    func scaled(by factor: CGFloat) -> UIColor {
-        var r: CGFloat = 0, g: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
-        getRed(&r, green: &g, blue: &b, alpha: &a)
-        return UIColor(red: r * factor, green: g * factor, blue: b * factor, alpha: 1)
     }
 }
 

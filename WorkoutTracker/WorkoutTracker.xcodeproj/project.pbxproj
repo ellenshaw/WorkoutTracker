@@ -27,12 +27,14 @@
 		904B5E900000000000000009 /* WorkoutResultView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 904B5E90000000000000000A /* WorkoutResultView.swift */; };
 		904B5E90000000000000000B /* MainTabView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 904B5E90000000000000000C /* MainTabView.swift */; };
 		904B5E90000000000000000D /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 904B5E90000000000000000E /* SettingsView.swift */; };
-		904B5EA00000000000000001 /* BodySpec.swift in Sources */ = {isa = PBXBuildFile; fileRef = 904B5EA00000000000000002 /* BodySpec.swift */; };
-		904B5EA00000000000000003 /* BodyMesher.swift in Sources */ = {isa = PBXBuildFile; fileRef = 904B5EA00000000000000004 /* BodyMesher.swift */; };
 		904B5EA00000000000000005 /* ExerciseLibrary.swift in Sources */ = {isa = PBXBuildFile; fileRef = 904B5EA00000000000000006 /* ExerciseLibrary.swift */; };
 		904B5EA00000000000000007 /* LogStrengthView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 904B5EA00000000000000008 /* LogStrengthView.swift */; };
 		904B5EA00000000000000009 /* LogActivityView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 904B5EA0000000000000000A /* LogActivityView.swift */; };
 		904B5EA0000000000000000B /* ExercisePickerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 904B5EA0000000000000000C /* ExercisePickerView.swift */; };
+		904B5EB00000000000000001 /* BodyAsset.swift in Sources */ = {isa = PBXBuildFile; fileRef = 904B5EB00000000000000002 /* BodyAsset.swift */; };
+		904B5EB00000000000000003 /* body_male.bin in Resources */ = {isa = PBXBuildFile; fileRef = 904B5EB00000000000000004 /* body_male.bin */; };
+		904B5EB00000000000000005 /* body_female.bin in Resources */ = {isa = PBXBuildFile; fileRef = 904B5EB00000000000000006 /* body_female.bin */; };
+		904B5EB00000000000000007 /* body_faces.bin in Resources */ = {isa = PBXBuildFile; fileRef = 904B5EB00000000000000008 /* body_faces.bin */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -76,12 +78,14 @@
 		904B5E90000000000000000A /* WorkoutResultView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkoutResultView.swift; sourceTree = "<group>"; };
 		904B5E90000000000000000C /* MainTabView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MainTabView.swift; sourceTree = "<group>"; };
 		904B5E90000000000000000E /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
-		904B5EA00000000000000002 /* BodySpec.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BodySpec.swift; sourceTree = "<group>"; };
-		904B5EA00000000000000004 /* BodyMesher.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BodyMesher.swift; sourceTree = "<group>"; };
 		904B5EA00000000000000006 /* ExerciseLibrary.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExerciseLibrary.swift; sourceTree = "<group>"; };
 		904B5EA00000000000000008 /* LogStrengthView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LogStrengthView.swift; sourceTree = "<group>"; };
 		904B5EA0000000000000000A /* LogActivityView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LogActivityView.swift; sourceTree = "<group>"; };
 		904B5EA0000000000000000C /* ExercisePickerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExercisePickerView.swift; sourceTree = "<group>"; };
+		904B5EB00000000000000002 /* BodyAsset.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BodyAsset.swift; sourceTree = "<group>"; };
+		904B5EB00000000000000004 /* body_male.bin */ = {isa = PBXFileReference; lastKnownFileType = file; path = body_male.bin; sourceTree = "<group>"; };
+		904B5EB00000000000000006 /* body_female.bin */ = {isa = PBXFileReference; lastKnownFileType = file; path = body_female.bin; sourceTree = "<group>"; };
+		904B5EB00000000000000008 /* body_faces.bin */ = {isa = PBXFileReference; lastKnownFileType = file; path = body_faces.bin; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -140,8 +144,10 @@
 				904B5E822FABB414008E659A /* WorkoutHomeView.swift */,
 				904B5E862FABB476008E659A /* AddWorkoutView.swift */,
 				904B5E882FABC04E008E659A /* RegisterView.swift */,
-				904B5EA00000000000000002 /* BodySpec.swift */,
-				904B5EA00000000000000004 /* BodyMesher.swift */,
+				904B5EB00000000000000002 /* BodyAsset.swift */,
+				904B5EB00000000000000004 /* body_male.bin */,
+				904B5EB00000000000000006 /* body_female.bin */,
+				904B5EB00000000000000008 /* body_faces.bin */,
 				904B5EA00000000000000006 /* ExerciseLibrary.swift */,
 				904B5EA00000000000000008 /* LogStrengthView.swift */,
 				904B5EA0000000000000000A /* LogActivityView.swift */,
@@ -290,6 +296,9 @@
 			files = (
 				904B5E502FAB00FB008E659A /* Preview Assets.xcassets in Resources */,
 				904B5E4D2FAB00FB008E659A /* Assets.xcassets in Resources */,
+				904B5EB00000000000000003 /* body_male.bin in Resources */,
+				904B5EB00000000000000005 /* body_female.bin in Resources */,
+				904B5EB00000000000000007 /* body_faces.bin in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -322,8 +331,7 @@
 				904B5E892FABC04E008E659A /* RegisterView.swift in Sources */,
 				904B5E492FAB00F9008E659A /* WorkoutTrackerApp.swift in Sources */,
 				904B5E812FABB3D8008E659A /* Workout.swift in Sources */,
-				904B5EA00000000000000001 /* BodySpec.swift in Sources */,
-				904B5EA00000000000000003 /* BodyMesher.swift in Sources */,
+				904B5EB00000000000000001 /* BodyAsset.swift in Sources */,
 				904B5EA00000000000000005 /* ExerciseLibrary.swift in Sources */,
 				904B5EA00000000000000007 /* LogStrengthView.swift in Sources */,
 				904B5EA00000000000000009 /* LogActivityView.swift in Sources */,

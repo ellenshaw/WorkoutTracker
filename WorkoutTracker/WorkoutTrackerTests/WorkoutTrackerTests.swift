@@ -111,31 +111,39 @@ final class WorkoutTrackerTests: XCTestCase {
         }
     }
 
-    func testBodySpecIsConsistent() {
+    func testBodyMeshesLoadAndAreWellFormed() throws {
         for type in BodyType.allCases {
-            let tubes = BodySpec.tubes(for: type)
-            let names = Set(tubes.map(\.name))
-            let patches = BodySpec.patches(for: type)
-            XCTAssertTrue(patches.allSatisfy { names.contains($0.host) })
-            for tube in tubes {
-                let ys = tube.keys.map(\.y)
-                XCTAssertEqual(ys, ys.sorted(), "\(tube.name) keys must ascend in y")
-                XCTAssertTrue(tube.keys.allSatisfy { $0.rx > 0 && $0.rz > 0 })
+            let mesh = try XCTUnwrap(BodyAsset.load(type), "missing mesh resource for \(type)")
+            XCTAssertEqual(mesh.vertexCount, 13380)
+            XCTAssertEqual(mesh.weights.count, mesh.vertexCount * BodyAsset.muscleOrder.count)
+            XCTAssertEqual(mesh.triangles.count % 3, 0)
+            XCTAssertEqual(mesh.positions.map(\.y).max() ?? 0, 7.02, accuracy: 0.05)
+            XCTAssertEqual(mesh.positions.map(\.y).min() ?? 1, 0, accuracy: 0.05)
+
+            // Every muscle group must be present on the body, or its heat would never show.
+            for (column, muscle) in BodyAsset.muscleOrder.enumerated() {
+                let covered = (0..<mesh.vertexCount).contains { mesh.weights[$0 * mesh.muscleCount + column] > 128 }
+                XCTAssertTrue(covered, "\(muscle) has no vertices on the \(type) body")
             }
-            XCTAssertEqual(Set(patches.map(\.muscle)), Set(MuscleGroup.allCases))
         }
     }
 
-    func testFemaleBodyIsNarrowerAtShouldersAndWiderAtHips() {
-        func torso(_ type: BodyType) -> [BodyKey] {
-            BodySpec.tubes(for: type).first { $0.name == "torso" }!.keys
-        }
-        let male = BodyMesher.profile(torso(.male), y: 5.2)
-        let female = BodyMesher.profile(torso(.female), y: 5.2)
-        XCTAssertLessThan(female.rx, male.rx)
-        let maleHip = BodyMesher.profile(torso(.male), y: 3.1)
-        let femaleHip = BodyMesher.profile(torso(.female), y: 3.1)
-        XCTAssertGreaterThan(femaleHip.rx, maleHip.rx)
+    func testMuscleOrderCoversEveryMuscleOnce() {
+        XCTAssertEqual(Set(BodyAsset.muscleOrder), Set(MuscleGroup.allCases))
+        XCTAssertEqual(BodyAsset.muscleOrder.count, MuscleGroup.allCases.count)
+    }
+
+    func testContoursAndHeatColors() throws {
+        let mesh = try XCTUnwrap(BodyAsset.load(.male))
+        let contours = BodyAsset.contours(for: mesh)
+        XCTAssertGreaterThan(contours.positions.count, 1000)
+        XCTAssertEqual(contours.positions.count % 2, 0)
+
+        let none = BodyAsset.vertexColors(for: mesh, heat: [:])
+        let hot = BodyAsset.vertexColors(for: mesh, heat: [.chest: .heavy])
+        XCTAssertNotEqual(none.line, hot.line)
+        let lineColors = BodyAsset.lineColors(for: contours, vertexLineColors: hot.line)
+        XCTAssertEqual(lineColors.count, contours.positions.count)
     }
 
     func testDecodesWorkoutsSavedByOlderVersions() throws {
