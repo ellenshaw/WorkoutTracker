@@ -37,7 +37,7 @@ struct LogActivityView: View {
         _name = State(initialValue: template?.name ?? "")
         _duration = State(initialValue: template.map { String($0.duration) } ?? "")
         _notes = State(initialValue: template?.notes ?? "")
-        _levels = State(initialValue: template?.heat ?? [:])
+        _levels = State(initialValue: template?.heat.mapValues { HeatLevel(nearest: $0) } ?? [:])
         _musclesEdited = State(initialValue: template != nil)
     }
 
@@ -192,7 +192,7 @@ struct LogActivityView: View {
             notes: notes.trimmingCharacters(in: .whitespacesAndNewlines),
             date: date
         )
-        workout.heat = levels
+        workout.heat = levels.mapValues { $0.intensity }
         onSave(workout)
     }
 }

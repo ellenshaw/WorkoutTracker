@@ -16,8 +16,8 @@ enum Hologram {
 }
 
 struct BodyModelView: UIViewRepresentable {
-    var heat: [MuscleGroup: HeatLevel]
-    var bodyType: BodyType
+    var heat: [MuscleGroup: Double]
+    var profile: BodyProfile
     /// Increment to spin the figure to its other side.
     var flipToken: Int
 
@@ -31,12 +31,12 @@ struct BodyModelView: UIViewRepresentable {
         view.allowsCameraControl = false
         let pan = UIPanGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.handlePan(_:)))
         view.addGestureRecognizer(pan)
-        context.coordinator.update(bodyType: bodyType, heat: heat)
+        context.coordinator.update(profile: profile, heat: heat)
         return view
     }
 
     func updateUIView(_ view: SCNView, context: Context) {
-        context.coordinator.update(bodyType: bodyType, heat: heat)
+        context.coordinator.update(profile: profile, heat: heat)
         context.coordinator.flip(ifTokenChanged: flipToken)
     }
 
@@ -62,8 +62,8 @@ struct BodyModelView: UIViewRepresentable {
         private var lineVertexSource: SCNGeometrySource?
         private var lineElement: SCNGeometryElement?
 
-        private var currentBodyType: BodyType?
-        private var lastHeat: [MuscleGroup: HeatLevel]?
+        private var currentProfile: BodyProfile?
+        private var lastHeat: [MuscleGroup: Double]?
         private var lastFlipToken = 0
 
         override init() {
@@ -73,14 +73,14 @@ struct BodyModelView: UIViewRepresentable {
 
         // MARK: Updating
 
-        func update(bodyType: BodyType, heat: [MuscleGroup: HeatLevel]) {
-            if bodyType != currentBodyType {
-                loadBody(bodyType)
+        func update(profile: BodyProfile, heat: [MuscleGroup: Double]) {
+            if profile != currentProfile {
+                loadBody(profile)
             }
             applyHeat(heat)
         }
 
-        private func applyHeat(_ heat: [MuscleGroup: HeatLevel]) {
+        private func applyHeat(_ heat: [MuscleGroup: Double]) {
             guard heat != lastHeat, let mesh, let contours,
                   let vertexSource, let normalSource, let fillElement,
                   let lineVertexSource, let lineElement else { return }
@@ -183,10 +183,10 @@ struct BodyModelView: UIViewRepresentable {
         }
 
         /// Loads the mesh for a body type and builds the parts that never change with heat.
-        private func loadBody(_ type: BodyType) {
-            currentBodyType = type
+        private func loadBody(_ profile: BodyProfile) {
+            currentProfile = profile
             lastHeat = nil
-            guard let mesh = BodyAsset.load(type) else { return }
+            guard let mesh = BodyAsset.load(profile) else { return }
             self.mesh = mesh
 
             let contours = BodyAsset.contours(for: mesh)
@@ -218,33 +218,50 @@ struct BodyModelView: UIViewRepresentable {
 
 // MARK: - Card, legend and breakdown
 
-/// The hologram on a dark backdrop, with a flip button and legend. Always dark so the glow reads
-/// in both light and dark mode.
+/// The hologram on a dark backdrop, with a flip button, body settings and legend. Always dark so
+/// the glow reads in both light and dark mode.
 struct HeatBodyCard: View {
-    let heat: [MuscleGroup: HeatLevel]
+    let heat: [MuscleGroup: Double]
 
-    @AppStorage(StorageKey.bodyType) private var bodyTypeRaw = BodyType.male.rawValue
+    @AppStorage(StorageKey.bodyGender) private var genderRaw = BodyGender.neutral.rawValue
+    @AppStorage(StorageKey.bodyAge) private var age = 28
+    @AppStorage(StorageKey.bodyWeightKg) private var weightKg = 70.0
+    @AppStorage(StorageKey.bodyHeightCm) private var heightCm = 172.0
+
     @State private var flipToken = 0
+    @State private var showingProfile = false
+
+    private var profile: BodyProfile {
+        BodyProfile(genderRaw: genderRaw, age: age, weightKg: weightKg, heightCm: heightCm)
+    }
 
     private var accessibilitySummary: String {
         let worked = heat.sorted { $0.value > $1.value }
-            .map { "\($0.key.title) \($0.value.title.lowercased())" }
+            .map { "\($0.key.title) \(HeatScale.label($0.value).lowercased())" }
         return worked.isEmpty ? "No muscles worked" : worked.joined(separator: ", ")
     }
 
     var body: some View {
         VStack(spacing: 10) {
-            ZStack(alignment: .topTrailing) {
-                BodyModelView(heat: heat, bodyType: BodyType(rawValue: bodyTypeRaw) ?? .male, flipToken: flipToken)
+            ZStack(alignment: .top) {
+                BodyModelView(heat: heat, profile: profile, flipToken: flipToken)
                     .frame(height: 440)
                     .accessibilityElement()
                     .accessibilityLabel("3D muscle heat map")
                     .accessibilityValue(accessibilitySummary)
 
-                Button {
-                    flipToken += 1
-                } label: {
-                    Label("Flip", systemImage: "arrow.triangle.2.circlepath")
+                HStack {
+                    Button {
+                        showingProfile = true
+                    } label: {
+                        Label("My body", systemImage: "person.crop.circle")
+                    }
+                    Spacer()
+                    Button {
+                        flipToken += 1
+                    } label: {
+                        Label("Flip", systemImage: "arrow.triangle.2.circlepath")
+                    }
                 }
                 .buttonStyle(.bordered)
                 .controlSize(.small)
@@ -256,39 +273,57 @@ struct HeatBodyCard: View {
                 .foregroundStyle(.secondary)
 
             HeatLegend()
+                .padding(.horizontal, 24)
                 .padding(.bottom, 14)
         }
         .background(Color(Hologram.background))
         .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
         .environment(\.colorScheme, .dark)
-    }
-}
-
-struct HeatLegend: View {
-    var body: some View {
-        HStack(spacing: 14) {
-            ForEach([HeatLevel.none, .light, .moderate, .heavy], id: \.self) { level in
-                HStack(spacing: 5) {
-                    Circle()
-                        .fill(level.color)
-                        .frame(width: 10, height: 10)
-                    Text(level.title)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
+        .sheet(isPresented: $showingProfile) {
+            NavigationStack {
+                BodyProfileView()
+                    .toolbar {
+                        ToolbarItem(placement: .confirmationAction) {
+                            Button("Done") { showingProfile = false }
+                        }
+                    }
             }
         }
     }
 }
 
+/// A cold-to-hot gradient bar, matching the colors on the body.
+struct HeatLegend: View {
+    var body: some View {
+        VStack(spacing: 4) {
+            Capsule()
+                .fill(HeatScale.gradient)
+                .frame(height: 8)
+            HStack {
+                Text("Not used")
+                Spacer()
+                Text("Light")
+                Spacer()
+                Text("Moderate")
+                Spacer()
+                Text("Max")
+            }
+            .font(.caption2)
+            .foregroundStyle(.secondary)
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Color scale from blue, not used, to red, maximum effort")
+    }
+}
+
 /// Text list of worked muscles, strongest first. Also keeps the screen usable without color.
 struct MuscleBreakdownList: View {
-    let heat: [MuscleGroup: HeatLevel]
+    let heat: [MuscleGroup: Double]
 
-    private var rows: [(muscle: MuscleGroup, level: HeatLevel)] {
-        heat.map { (muscle: $0.key, level: $0.value) }
+    private var rows: [(muscle: MuscleGroup, value: Double)] {
+        heat.map { (muscle: $0.key, value: $0.value) }
             .sorted { lhs, rhs in
-                lhs.level != rhs.level ? lhs.level > rhs.level : lhs.muscle.title < rhs.muscle.title
+                lhs.value != rhs.value ? lhs.value > rhs.value : lhs.muscle.title < rhs.muscle.title
             }
     }
 
@@ -301,11 +336,11 @@ struct MuscleBreakdownList: View {
                 ForEach(rows, id: \.muscle) { row in
                     HStack {
                         Circle()
-                            .fill(row.level.color)
+                            .fill(HeatScale.color(row.value))
                             .frame(width: 12, height: 12)
                         Text(row.muscle.title)
                         Spacer()
-                        Text(row.level.title)
+                        Text(HeatScale.label(row.value))
                             .foregroundStyle(.secondary)
                     }
                     .padding(.vertical, 10)

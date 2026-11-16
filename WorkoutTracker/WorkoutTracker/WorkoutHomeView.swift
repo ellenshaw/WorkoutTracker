@@ -158,7 +158,7 @@ private struct WorkoutRow: View {
     let workout: Workout
 
     /// Hardest-worked muscles first, as colored dots.
-    private var topMuscles: [(key: MuscleGroup, value: HeatLevel)] {
+    private var topMuscles: [(key: MuscleGroup, value: Double)] {
         let sorted = workout.heat.sorted { lhs, rhs in
             lhs.value != rhs.value ? lhs.value > rhs.value : lhs.key.title < rhs.key.title
         }
@@ -194,7 +194,7 @@ private struct WorkoutRow: View {
                     HStack(spacing: 4) {
                         ForEach(topMuscles, id: \.key) { item in
                             Circle()
-                                .fill(item.value.color)
+                                .fill(HeatScale.color(item.value))
                                 .frame(width: 8, height: 8)
                                 .accessibilityHidden(true)
                         }

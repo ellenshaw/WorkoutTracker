@@ -2,8 +2,8 @@
 //  BodyAsset.swift
 //  WorkoutTracker
 //
-//  Loads the real human body meshes and prepares them for the hologram: smooth normals,
-//  horizontal contour lines, and per-vertex heat colors.
+//  Loads the real human body mesh, reshapes it for the user's profile (gender, age, weight),
+//  and prepares it for the hologram: smooth normals, horizontal contour lines, heat colors.
 //
 //  The meshes are built from the MakeHuman base mesh and shape targets, which are released
 //  under CC0 (public domain): https://github.com/makehumancommunity/makehuman
@@ -14,25 +14,6 @@
 import Foundation
 import SceneKit
 import simd
-
-enum BodyType: String, CaseIterable, Identifiable {
-    case male, female
-
-    var id: String { rawValue }
-    var title: String { self == .male ? "Male" : "Female" }
-}
-
-extension HeatLevel {
-    /// Same colors as `uiColor`, as linear RGB for the vertex-color math.
-    var rgb: SIMD3<Float> {
-        switch self {
-        case .none: return SIMD3(0.5, 0.5, 0.5)
-        case .light: return SIMD3(1.00, 0.84, 0.20)
-        case .moderate: return SIMD3(1.00, 0.54, 0.10)
-        case .heavy: return SIMD3(0.93, 0.16, 0.16)
-        }
-    }
-}
 
 struct BodyMeshData {
     typealias Vec = SIMD3<Float>
@@ -57,6 +38,22 @@ struct BodyContours {
     let blend: [Float]
 }
 
+/// The base mesh plus the shape targets it is morphed with. Loaded once.
+struct BodyBase {
+    let positions: [SIMD3<Float>]
+    /// How strongly each vertex is replaced by the smooth head shape (0 = not at all).
+    let headMask: [Float]
+    /// Vertices used to size the head shape.
+    let headCore: [Int]
+    let headHeight: Float
+    let triangles: [UInt16]
+    /// Muscle weights for the base body, `vertexCount × muscleCount`.
+    let weights: [UInt8]
+    let muscleCount: Int
+    /// Shape deltas in the order of `BodyAsset.targetOrder`.
+    let targets: [[SIMD3<Float>]]
+}
+
 enum BodyAsset {
     typealias Vec = SIMD3<Float>
 
@@ -66,6 +63,15 @@ enum BodyAsset {
         .traps, .lats, .lowerBack, .glutes, .quads, .hamstrings, .calves
     ]
 
+    private enum Target: Int {
+        case youngMale, youngFemale, oldMale, oldFemale
+        case muscleMale, muscleFemale
+        case heavyMale, heavyFemale, slimMale, slimFemale
+    }
+
+    /// Height of the figure in scene units.
+    static let figureHeight: Float = 7.02
+
     // Hologram palette
     static let baseFill = SIMD4<Float>(0.02, 0.08, 0.18, 1)
     static let baseLine = SIMD3<Float>(0.22, 0.62, 1.0)
@@ -74,40 +80,80 @@ enum BodyAsset {
 
     // MARK: Loading
 
-    static func load(_ type: BodyType) -> BodyMeshData? {
+    private static var cachedBase: BodyBase?
+
+    static func loadBase() -> BodyBase? {
+        if let cachedBase { return cachedBase }
+
         let bundle = Bundle(for: BundleToken.self)
-        guard let bodyURL = bundle.url(forResource: "body_\(type.rawValue)", withExtension: "bin"),
+        guard let baseURL = bundle.url(forResource: "body_base", withExtension: "bin"),
+              let targetsURL = bundle.url(forResource: "body_targets", withExtension: "bin"),
               let facesURL = bundle.url(forResource: "body_faces", withExtension: "bin"),
-              let body = try? Data(contentsOf: bodyURL),
+              let base = try? Data(contentsOf: baseURL),
+              let targets = try? Data(contentsOf: targetsURL),
               let faces = try? Data(contentsOf: facesURL),
-              body.count >= 8, faces.count >= 4 else { return nil }
+              base.count >= 16, targets.count >= 8, faces.count >= 4 else { return nil }
 
-        let vertexCount = Int(readUInt32(body, at: 0))
-        let muscleCount = Int(readUInt32(body, at: 4))
-        let positionsEnd = 8 + vertexCount * 12
-        let weightsEnd = positionsEnd + vertexCount * muscleCount
-        guard muscleCount == muscleOrder.count, body.count >= weightsEnd else { return nil }
+        let vertexCount = Int(readUInt32(base, at: 0))
+        let muscleCount = Int(readUInt32(base, at: 4))
+        let coreCount = Int(readUInt32(base, at: 8))
+        let headHeight = readFloat(base, at: 12)
 
-        let floats: [Float] = copyArray(body, from: 8, count: vertexCount * 3)
-        let positions = (0..<vertexCount).map { Vec(floats[$0 * 3], floats[$0 * 3 + 1], floats[$0 * 3 + 2]) }
-        let weights: [UInt8] = copyArray(body, from: positionsEnd, count: vertexCount * muscleCount)
+        let positionsStart = 16
+        let maskStart = positionsStart + vertexCount * 12
+        let coreStart = maskStart + vertexCount
+        let weightsStart = coreStart + coreCount * 4
+        guard muscleCount == muscleOrder.count, base.count >= weightsStart + vertexCount * muscleCount else { return nil }
+
+        let floats: [Float] = copyArray(base, from: positionsStart, count: vertexCount * 3)
+        let positions = vectors(from: floats)
+        let mask: [UInt8] = copyArray(base, from: maskStart, count: vertexCount)
+        let core: [UInt32] = copyArray(base, from: coreStart, count: coreCount)
+        let weights: [UInt8] = copyArray(base, from: weightsStart, count: vertexCount * muscleCount)
+
+        guard Int(readUInt32(targets, at: 0)) == vertexCount else { return nil }
+        let targetCount = Int(readUInt32(targets, at: 4))
+        guard targetCount == 10, targets.count >= 8 + targetCount * vertexCount * 12 else { return nil }
+        let deltas: [[Vec]] = (0..<targetCount).map { index in
+            let start = 8 + index * vertexCount * 12
+            return vectors(from: copyArray(targets, from: start, count: vertexCount * 3) as [Float])
+        }
 
         let triangleCount = Int(readUInt32(faces, at: 0))
         guard faces.count >= 4 + triangleCount * 6 else { return nil }
         let triangles: [UInt16] = copyArray(faces, from: 4, count: triangleCount * 3)
         guard triangles.allSatisfy({ Int($0) < vertexCount }) else { return nil }
 
-        return BodyMeshData(positions: positions,
-                            normals: smoothNormals(positions: positions, triangles: triangles),
-                            triangles: triangles,
-                            weights: weights,
-                            muscleCount: muscleCount)
+        let loaded = BodyBase(positions: positions,
+                              headMask: mask.map { Float($0) / 255 },
+                              headCore: core.map { Int($0) },
+                              headHeight: headHeight,
+                              triangles: triangles,
+                              weights: weights,
+                              muscleCount: muscleCount,
+                              targets: deltas)
+        cachedBase = loaded
+        return loaded
+    }
+
+    /// Convenience: the base body reshaped for a profile.
+    static func load(_ profile: BodyProfile = BodyProfile()) -> BodyMeshData? {
+        guard let base = loadBase() else { return nil }
+        return morph(base, profile: profile)
+    }
+
+    private static func vectors(from floats: [Float]) -> [Vec] {
+        (0..<(floats.count / 3)).map { Vec(floats[$0 * 3], floats[$0 * 3 + 1], floats[$0 * 3 + 2]) }
     }
 
     private static func readUInt32(_ data: Data, at offset: Int) -> UInt32 {
         var value: UInt32 = 0
         _ = withUnsafeMutableBytes(of: &value) { data.copyBytes(to: $0, from: offset..<(offset + 4)) }
         return UInt32(littleEndian: value)
+    }
+
+    private static func readFloat(_ data: Data, at offset: Int) -> Float {
+        Float(bitPattern: readUInt32(data, at: offset))
     }
 
     private static func copyArray<T>(_ data: Data, from offset: Int, count: Int) -> [T] where T: ExpressibleByIntegerLiteral {
@@ -117,6 +163,96 @@ enum BodyAsset {
             _ = data.copyBytes(to: buffer, from: offset..<(offset + byteCount))
         }
         return result
+    }
+
+    // MARK: Morphing
+
+    /// Reshapes the base body for a profile: blends the male and female shapes, then age,
+    /// muscle and weight, rounds the head into a featureless egg, and scales to a fixed height.
+    static func morph(_ base: BodyBase, profile: BodyProfile) -> BodyMeshData {
+        let male = profile.gender.maleShare
+        let female = 1 - male
+        let age = profile.ageFactor
+        let muscle = profile.muscleFactor
+        let weight = profile.weightFactor
+
+        let youngWeight = (1 - age)
+        let t = base.targets
+
+        // Coefficients for each target: [target index: weight].
+        var coefficients: [(Int, Float)] = [
+            (Target.youngMale.rawValue, youngWeight * male),
+            (Target.youngFemale.rawValue, youngWeight * female),
+            (Target.oldMale.rawValue, age * male),
+            (Target.oldFemale.rawValue, age * female),
+            (Target.muscleMale.rawValue, muscle * male),
+            (Target.muscleFemale.rawValue, muscle * female)
+        ]
+        if weight >= 0 {
+            coefficients.append((Target.heavyMale.rawValue, weight * male))
+            coefficients.append((Target.heavyFemale.rawValue, weight * female))
+        } else {
+            coefficients.append((Target.slimMale.rawValue, -weight * male))
+            coefficients.append((Target.slimFemale.rawValue, -weight * female))
+        }
+        coefficients = coefficients.filter { $0.1 > 0 }
+
+        var positions = base.positions
+        for (index, factor) in coefficients {
+            let delta = t[index]
+            for v in 0..<positions.count {
+                positions[v] += delta[v] * factor
+            }
+        }
+
+        roundHead(&positions, base: base)
+
+        // Feet on the ground, fixed overall height.
+        let minY = positions.map(\.y).min() ?? 0
+        let maxY = positions.map(\.y).max() ?? 1
+        let scale = figureHeight / max(maxY - minY, 0.001)
+        for v in 0..<positions.count {
+            positions[v] = Vec(positions[v].x, positions[v].y - minY, positions[v].z) * scale
+        }
+
+        return BodyMeshData(positions: positions,
+                            normals: smoothNormals(positions: positions, triangles: base.triangles),
+                            triangles: base.triangles,
+                            weights: base.weights,
+                            muscleCount: base.muscleCount)
+    }
+
+    /// Replaces the face with a smooth egg-shaped head, fitted to this particular body.
+    private static func roundHead(_ positions: inout [Vec], base: BodyBase) {
+        guard !base.headCore.isEmpty else { return }
+        let core = base.headCore.map { positions[$0] }
+
+        func quantile(_ values: [Float], _ q: Float) -> Float {
+            let sorted = values.sorted()
+            let index = min(max(Int(Float(sorted.count - 1) * q), 0), sorted.count - 1)
+            return sorted[index]
+        }
+
+        let top = core.map(\.y).max() ?? 0
+        let halfWidth = quantile(core.map { abs($0.x) }, 0.97)
+        let zBack = quantile(core.map(\.z), 0.02)
+        let zFront = quantile(core.map(\.z), 0.90)
+        let bottom = top - base.headHeight
+
+        let center = Vec(0, (top + bottom) / 2, (zBack + zFront) / 2)
+        let radii = Vec(max(halfWidth, 0.01), max(base.headHeight / 2, 0.01), max((zFront - zBack) / 2, 0.01))
+
+        for v in 0..<positions.count {
+            let amount = base.headMask[v]
+            if amount <= 0 { continue }
+            let offset = positions[v] - center
+            let length = simd_length(offset)
+            let direction = length > 1e-6 ? offset / length : Vec(0, 1, 0)
+            let scaled = direction / radii
+            let k = simd_length(scaled)
+            let target = center + direction / max(k, 1e-6)
+            positions[v] += (target - positions[v]) * amount
+        }
     }
 
     // MARK: Normals
@@ -186,12 +322,12 @@ enum BodyAsset {
     // MARK: Heat colors
 
     /// Per-vertex colors for the solid body and for the contour lines.
-    static func vertexColors(for mesh: BodyMeshData, heat: [MuscleGroup: HeatLevel])
+    static func vertexColors(for mesh: BodyMeshData, heat: [MuscleGroup: Double])
         -> (fill: [SIMD4<Float>], line: [SIMD4<Float>]) {
 
         let active: [(column: Int, color: SIMD3<Float>)] = muscleOrder.enumerated().compactMap { column, muscle in
-            guard let level = heat[muscle], level != HeatLevel.none else { return nil }
-            return (column, level.rgb)
+            guard let intensity = heat[muscle], intensity > 0 else { return nil }
+            return (column, HeatScale.rgb(intensity))
         }
 
         var fill = [SIMD4<Float>](repeating: baseFill, count: mesh.vertexCount)

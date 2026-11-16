@@ -32,8 +32,8 @@ struct Workout: Identifiable, Codable, Hashable {
     var duration: Int
     var notes: String
     var date: Date
-    /// Muscle raw value → `HeatLevel` raw value. Stored with String keys so JSON stays an object.
-    var muscleLevels: [String: Int] = [:]
+    /// Muscle raw value → intensity in percent (0–100). Stored with String keys so JSON stays an object.
+    var muscleIntensity: [String: Int] = [:]
     /// Filled for strength workouts (Hevy-style exercises with sets).
     var exercises: [LoggedExercise] = []
     /// Pinned workouts show up on the home screen as one-tap templates.
@@ -45,7 +45,7 @@ struct Workout: Identifiable, Codable, Hashable {
          duration: Int,
          notes: String,
          date: Date,
-         muscleLevels: [String: Int] = [:],
+         muscleIntensity: [String: Int] = [:],
          exercises: [LoggedExercise] = [],
          isPinned: Bool = false) {
         self.id = id
@@ -54,13 +54,15 @@ struct Workout: Identifiable, Codable, Hashable {
         self.duration = duration
         self.notes = notes
         self.date = date
-        self.muscleLevels = muscleLevels
+        self.muscleIntensity = muscleIntensity
         self.exercises = exercises
         self.isPinned = isPinned
     }
 
     private enum CodingKeys: String, CodingKey {
-        case id, name, category, duration, notes, date, muscleLevels, exercises, isPinned
+        case id, name, category, duration, notes, date, muscleIntensity, exercises, isPinned
+        /// Written by older versions as steps 1–3 instead of percentages.
+        case muscleLevels
     }
 
     // Tolerant decoding so data saved by older versions keeps loading.
@@ -72,27 +74,50 @@ struct Workout: Identifiable, Codable, Hashable {
         duration = try c.decodeIfPresent(Int.self, forKey: .duration) ?? 0
         notes = try c.decodeIfPresent(String.self, forKey: .notes) ?? ""
         date = try c.decode(Date.self, forKey: .date)
-        muscleLevels = try c.decodeIfPresent([String: Int].self, forKey: .muscleLevels) ?? [:]
         exercises = try c.decodeIfPresent([LoggedExercise].self, forKey: .exercises) ?? []
         isPinned = try c.decodeIfPresent(Bool.self, forKey: .isPinned) ?? false
+
+        if let percent = try c.decodeIfPresent([String: Int].self, forKey: .muscleIntensity) {
+            muscleIntensity = percent
+        } else if let legacy = try c.decodeIfPresent([String: Int].self, forKey: .muscleLevels) {
+            muscleIntensity = legacy.compactMapValues { step in
+                HeatLevel(rawValue: step).flatMap { $0 == HeatLevel.none ? nil : Int($0.intensity * 100) }
+            }
+        } else {
+            muscleIntensity = [:]
+        }
     }
 
-    var heat: [MuscleGroup: HeatLevel] {
+    func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(id, forKey: .id)
+        try c.encode(name, forKey: .name)
+        try c.encode(category, forKey: .category)
+        try c.encode(duration, forKey: .duration)
+        try c.encode(notes, forKey: .notes)
+        try c.encode(date, forKey: .date)
+        try c.encode(muscleIntensity, forKey: .muscleIntensity)
+        try c.encode(exercises, forKey: .exercises)
+        try c.encode(isPinned, forKey: .isPinned)
+    }
+
+    /// How hard each muscle was worked, 0 (not at all) to 1 (maximum).
+    var heat: [MuscleGroup: Double] {
         get {
-            var result: [MuscleGroup: HeatLevel] = [:]
-            for (key, value) in muscleLevels {
-                if let muscle = MuscleGroup(rawValue: key), let level = HeatLevel(rawValue: value), level != .none {
-                    result[muscle] = level
+            var result: [MuscleGroup: Double] = [:]
+            for (key, percent) in muscleIntensity {
+                if let muscle = MuscleGroup(rawValue: key), percent > 0 {
+                    result[muscle] = min(Double(percent), 100) / 100
                 }
             }
             return result
         }
         set {
-            var levels: [String: Int] = [:]
-            for (muscle, level) in newValue where level != HeatLevel.none {
-                levels[muscle.rawValue] = level.rawValue
+            var stored: [String: Int] = [:]
+            for (muscle, value) in newValue where value > 0 {
+                stored[muscle.rawValue] = Int((min(value, 1) * 100).rounded())
             }
-            muscleLevels = levels
+            muscleIntensity = stored
         }
     }
 

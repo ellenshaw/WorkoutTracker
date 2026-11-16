@@ -68,7 +68,7 @@ final class WorkoutStore: ObservableObject {
         workoutsThisWeek.reduce(0) { $0 + $1.duration }
     }
 
-    func weeklyHeat() -> [MuscleGroup: HeatLevel] {
+    func weeklyHeat() -> [MuscleGroup: Double] {
         HeatCalculator.weeklyHeat(workouts: workouts)
     }
 

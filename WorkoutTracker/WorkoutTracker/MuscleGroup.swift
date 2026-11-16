@@ -4,14 +4,63 @@
 //
 
 import SwiftUI
-import UIKit
+import simd
 
-/// How hard a muscle was worked. Maps directly to the heat colors on the 3D model.
+/// The heat scale used everywhere: cold blue (not used) through cyan, green and yellow to hot red.
+enum HeatScale {
+    private static let stops: [(position: Double, color: SIMD3<Float>)] = [
+        (0.0, SIMD3<Float>(0.12, 0.45, 1.00)),   // blue
+        (0.2, SIMD3<Float>(0.00, 0.85, 1.00)),   // cyan
+        (0.4, SIMD3<Float>(0.20, 0.90, 0.40)),   // green
+        (0.6, SIMD3<Float>(1.00, 0.90, 0.20)),   // yellow
+        (0.8, SIMD3<Float>(1.00, 0.55, 0.10)),   // orange
+        (1.0, SIMD3<Float>(0.93, 0.16, 0.16))    // red
+    ]
+
+    /// Color for an intensity from 0 (cold) to 1 (hot).
+    static func rgb(_ value: Double) -> SIMD3<Float> {
+        let t = min(max(value, 0), 1)
+        for i in 0..<(stops.count - 1) {
+            let lower = stops[i]
+            let upper = stops[i + 1]
+            if t <= upper.position {
+                let u = Float((t - lower.position) / (upper.position - lower.position))
+                return lower.color * (1 - u) + upper.color * u
+            }
+        }
+        return stops[stops.count - 1].color
+    }
+
+    static func color(_ value: Double) -> Color {
+        let c = rgb(value)
+        return Color(red: Double(c.x), green: Double(c.y), blue: Double(c.z))
+    }
+
+    /// Words for the breakdown list.
+    static func label(_ value: Double) -> String {
+        switch value {
+        case ..<0.25: return "Light"
+        case ..<0.5: return "Moderate"
+        case ..<0.75: return "High"
+        default: return "Max"
+        }
+    }
+
+    static var gradient: LinearGradient {
+        LinearGradient(
+            stops: stops.map { Gradient.Stop(color: color($0.position), location: $0.position) },
+            startPoint: .leading,
+            endPoint: .trailing
+        )
+    }
+}
+
+/// The four steps you cycle through when tapping a muscle chip. Each sits at a point on the heat scale.
 enum HeatLevel: Int, CaseIterable, Comparable, Codable {
     case none = 0
-    case light      // yellow
-    case moderate   // orange
-    case heavy      // red
+    case light
+    case moderate
+    case heavy
 
     static func < (lhs: HeatLevel, rhs: HeatLevel) -> Bool {
         lhs.rawValue < rhs.rawValue
@@ -26,16 +75,32 @@ enum HeatLevel: Int, CaseIterable, Comparable, Codable {
         }
     }
 
-    var uiColor: UIColor {
+    /// Position on the heat scale, 0 (cold blue) to 1 (hot red).
+    var intensity: Double {
         switch self {
-        case .none: return .systemGray
-        case .light: return UIColor(red: 1.00, green: 0.84, blue: 0.20, alpha: 1)
-        case .moderate: return UIColor(red: 1.00, green: 0.54, blue: 0.10, alpha: 1)
-        case .heavy: return UIColor(red: 0.93, green: 0.16, blue: 0.16, alpha: 1)
+        case .none: return 0
+        case .light: return 0.35
+        case .moderate: return 0.65
+        case .heavy: return 1.0
         }
     }
 
-    var color: Color { Color(uiColor) }
+    /// The chip step closest to a continuous intensity.
+    init(nearest intensity: Double) {
+        if intensity <= 0 {
+            self = .none
+        } else if intensity < 0.5 {
+            self = .light
+        } else if intensity < 0.82 {
+            self = .moderate
+        } else {
+            self = .heavy
+        }
+    }
+
+    var color: Color {
+        self == .none ? Color(.systemGray) : HeatScale.color(intensity)
+    }
 
     /// Tap-to-cycle order used by the muscle chips: none → light → moderate → heavy → none.
     var next: HeatLevel {
@@ -120,54 +185,35 @@ enum WorkoutCategory: String, CaseIterable, Codable, Identifiable {
 
 /// Pure calculation so it can be unit tested without a store.
 enum HeatCalculator {
-    /// Turns a strength session into muscle heat. A set counts 1 for each primary muscle and
-    /// 0.5 for each secondary muscle; 4+ points is moderate, 8+ is heavy.
-    static func strengthHeat(exercises: [LoggedExercise]) -> [MuscleGroup: HeatLevel] {
+    /// Turns a strength session into muscle intensity (0...1). A set counts 1 for each primary
+    /// muscle and 0.5 for each secondary muscle; 10 points is the top of the scale.
+    static func strengthHeat(exercises: [LoggedExercise]) -> [MuscleGroup: Double] {
         var scores: [MuscleGroup: Double] = [:]
         for exercise in exercises {
             let sets = Double(exercise.sets.count)
             for muscle in exercise.primary { scores[muscle, default: 0] += sets }
             for muscle in exercise.secondary { scores[muscle, default: 0] += sets * 0.5 }
         }
-        var result: [MuscleGroup: HeatLevel] = [:]
-        for (muscle, score) in scores {
-            if score >= 8 {
-                result[muscle] = .heavy
-            } else if score >= 4 {
-                result[muscle] = .moderate
-            } else if score > 0 {
-                result[muscle] = .light
-            }
-        }
-        return result
+        return scores.mapValues { min($0 / 10, 1) }
     }
 
-    /// Combines recent workouts into one heat level per muscle.
+    /// Combines recent workouts into one intensity per muscle.
     ///
-    /// Each workout contributes `level × (duration / 45 min)`, with the duration factor clamped
-    /// to 0.5…1.5 so one marathon session can't dominate. A single ~45 minute workout therefore
-    /// keeps the color the user picked, and repeated sessions push a muscle up a level.
-    static func weeklyHeat(workouts: [Workout], now: Date = Date(), days: Int = 7) -> [MuscleGroup: HeatLevel] {
+    /// Each workout contributes `intensity × (duration / 45 min)`, with the duration factor
+    /// clamped to 0.5…1.5 so one marathon session can't dominate. A single hard 45 minute
+    /// workout lands in the orange-red range, and repeated sessions push a muscle to the top.
+    static func weeklyHeat(workouts: [Workout], now: Date = Date(), days: Int = 7) -> [MuscleGroup: Double] {
         guard let start = Calendar.current.date(byAdding: .day, value: -days, to: now) else { return [:] }
 
         var scores: [MuscleGroup: Double] = [:]
         for workout in workouts where workout.date >= start && workout.date <= now {
             let factor = min(max(Double(workout.duration) / 45.0, 0.5), 1.5)
-            for (muscle, level) in workout.heat {
-                scores[muscle, default: 0] += Double(level.rawValue) * factor
+            for (muscle, intensity) in workout.heat {
+                scores[muscle, default: 0] += intensity * factor
             }
         }
-
-        var result: [MuscleGroup: HeatLevel] = [:]
-        for (muscle, score) in scores {
-            if score >= 3 {
-                result[muscle] = .heavy
-            } else if score >= 1.75 {
-                result[muscle] = .moderate
-            } else if score > 0 {
-                result[muscle] = .light
-            }
+        return scores.compactMapValues { score in
+            score > 0 ? min(score / 1.2, 1) : nil
         }
-        return result
     }
 }

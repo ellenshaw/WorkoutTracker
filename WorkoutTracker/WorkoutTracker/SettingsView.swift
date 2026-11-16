@@ -9,7 +9,6 @@ struct SettingsView: View {
     @EnvironmentObject private var store: WorkoutStore
 
     @AppStorage(StorageKey.appearance) private var appearance = AppearanceMode.system.rawValue
-    @AppStorage(StorageKey.bodyType) private var bodyType = BodyType.male.rawValue
     @AppStorage(StorageKey.weightUnit) private var weightUnit = WeightUnit.kg.rawValue
     @AppStorage(StorageKey.userName) private var userName = ""
     @AppStorage(StorageKey.isLoggedIn) private var isLoggedIn = false
@@ -34,13 +33,12 @@ struct SettingsView: View {
                     .pickerStyle(.segmented)
                 }
 
-                Section("Body model") {
-                    Picker("Body model", selection: $bodyType) {
-                        ForEach(BodyType.allCases) { type in
-                            Text(type.title).tag(type.rawValue)
-                        }
+                Section("3D body") {
+                    NavigationLink {
+                        BodyProfileView()
+                    } label: {
+                        Label("My body", systemImage: "person.crop.circle")
                     }
-                    .pickerStyle(.segmented)
                 }
 
                 Section("Units") {
