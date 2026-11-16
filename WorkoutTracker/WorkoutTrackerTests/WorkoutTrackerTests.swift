@@ -241,16 +241,47 @@ final class WorkoutTrackerTests: XCTestCase {
         XCTAssertNotEqual(maleMesh.positions, femaleMesh.positions)
     }
 
-    func testContoursAndHeatColors() throws {
+    func testLinesAnchorsAndColors() throws {
         let mesh = try XCTUnwrap(BodyAsset.load())
-        let contours = BodyAsset.contours(for: mesh)
-        XCTAssertGreaterThan(contours.positions.count, 1000)
-        XCTAssertEqual(contours.positions.count % 2, 0)
 
-        let none = BodyAsset.vertexColors(for: mesh, heat: [:])
-        let hot = BodyAsset.vertexColors(for: mesh, heat: [.chest: 1.0])
-        XCTAssertNotEqual(none.line, hot.line)
-        let lineColors = BodyAsset.lineColors(for: contours, vertexLineColors: hot.line)
-        XCTAssertEqual(lineColors.count, contours.positions.count)
+        let lines = BodyAsset.lines(for: mesh)
+        XCTAssertGreaterThan(lines.positions.count, 1000)
+        XCTAssertEqual(lines.positions.count % 2, 0)
+        XCTAssertEqual(lines.positions.count, lines.muscle.count)
+        XCTAssertEqual(lines.positions.count, lines.kind.count)
+        XCTAssertTrue(lines.kind.contains(0), "no skin lines")
+        XCTAssertTrue(lines.kind.contains(1), "no muscle fibres")
+        XCTAssertTrue(lines.kind.contains(2), "no muscle outlines")
+        // Every muscle gets an outline.
+        for column in 0..<BodyAsset.muscleOrder.count {
+            let outlined = zip(lines.muscle, lines.kind).contains { $0 == Int8(column) && $1 == 2 }
+            XCTAssertTrue(outlined, "\(BodyAsset.muscleOrder[column]) has no outline")
+        }
+
+        // Every muscle can be labelled.
+        let anchored = Set(BodyAsset.anchors(for: mesh).map(\.muscle))
+        XCTAssertEqual(anchored, Set(MuscleGroup.allCases))
+
+        let none = BodyAsset.fillColors(for: mesh, heat: [:])
+        let hot = BodyAsset.fillColors(for: mesh, heat: [.chest: 1.0])
+        XCTAssertEqual(none.count, mesh.vertexCount)
+        XCTAssertNotEqual(none, hot)
+
+        let coldLines = BodyAsset.lineColors(for: lines, heat: [:])
+        let hotLines = BodyAsset.lineColors(for: lines, heat: [.chest: 1.0])
+        XCTAssertEqual(coldLines.count, lines.positions.count)
+        XCTAssertNotEqual(coldLines, hotLines)
+    }
+
+    func testMusclesStandOutFromTheBody() throws {
+        let base = try XCTUnwrap(BodyAsset.loadBase())
+        let mesh = BodyAsset.morph(base, profile: BodyProfile(gender: .male))
+        // Relief pushes muscle vertices outward, so the chest sits further forward than the skin beside it.
+        let chestColumn = try XCTUnwrap(BodyAsset.muscleOrder.firstIndex(of: .chest))
+        let chestFront = (0..<mesh.vertexCount)
+            .filter { mesh.weight(vertex: $0, column: chestColumn) > 0.8 && mesh.positions[$0].x > 0 }
+            .map { mesh.positions[$0].z }
+        XCTAssertFalse(chestFront.isEmpty)
+        XCTAssertGreaterThan(chestFront.max() ?? 0, 0.3)
     }
 }
