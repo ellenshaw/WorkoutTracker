@@ -666,6 +666,53 @@ enum BodyAsset {
         return colors
     }
 
+    /// The facets of worked muscles, drawn as their own near-opaque layer in a bright, saturated heat
+    /// color so the heat map is obvious. Corners are ordered to face outward, so with back-face
+    /// culling you only see the facets on the near side of the body.
+    struct CrystalHeat {
+        var positions: [Vec] = []
+        var normals: [Vec] = []
+        var colors: [SIMD4<Float>] = []
+    }
+
+    static func crystalHeatFacets(for crystal: CrystalMesh, mesh: BodyMeshData,
+                                  heat: [MuscleGroup: Double], lift: Float = 0.012) -> CrystalHeat {
+        var result = CrystalHeat()
+        let tints = heatTint(for: mesh, heat: heat)
+        if !tints.contains(where: { $0.amount > 0 }) { return result }
+        let light = simd_normalize(Vec(0.3, 0.5, 0.8))
+
+        for t in 0..<crystal.triangleCount {
+            let base = 3 * t
+            var heatColor = SIMD3<Float>.zero
+            var strongest: Float = 0
+            var total: Float = 0
+            for k in 0..<3 {
+                let tint = tints[Int(crystal.corners[base + k])]
+                total += tint.amount
+                if tint.amount > strongest { strongest = tint.amount; heatColor = tint.color }
+            }
+            if min(total / 3 * 1.6, 1) < 0.3 { continue }
+
+            let normal = crystal.normals[base]
+            var a = crystal.positions[base], b = crystal.positions[base + 1], c = crystal.positions[base + 2]
+            // Counter-clockwise when seen from outside, so the back side is culled.
+            if simd_dot(simd_cross(b - a, c - a), normal) < 0 { swap(&b, &c) }
+            a += normal * lift; b += normal * lift; c += normal * lift
+
+            // Gentle shading across facets keeps the crystal look without dulling the color.
+            let jitter = Float((UInt32(truncatingIfNeeded: t) &* 2654435761) % 1000) / 1000 * 0.2 - 0.1
+            let shade = min(max(0.9 + 0.25 * abs(simd_dot(normal, light)) + jitter, 0.7), 1.2)
+            let rgb = simd_min(heatColor * shade, SIMD3<Float>(repeating: 1.2))
+            let color = SIMD4(rgb.x, rgb.y, rgb.z, 1)
+
+            result.positions += [a, b, c]
+            result.normals += [normal, normal, normal]
+            result.colors += [color, color, color]
+        }
+        return result
+    }
+
     /// Colors for the facet edges (`edge: true`) or the glowing nodes, tinted by heat.
     static func crystalLineColors(vertices: [Int32], mesh: BodyMeshData, heat: [MuscleGroup: Double], edge: Bool) -> [SIMD4<Float>] {
         let tints = heatTint(for: mesh, heat: heat)

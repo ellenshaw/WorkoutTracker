@@ -114,6 +114,7 @@ struct BodyModelView: UIViewRepresentable {
         private let crystalFillNode = SCNNode()
         private let crystalEdgeNode = SCNNode()
         private let crystalDotNode = SCNNode()
+        private let crystalHeatNode = SCNNode()     // worked muscles, as bright near-opaque facets
 
         private let fillMaterial = Coordinator.litMaterial()
         private let lineMaterial = Coordinator.constantMaterial(.white)
@@ -121,6 +122,11 @@ struct BodyModelView: UIViewRepresentable {
         private let crystalFillMaterial = Coordinator.glassMaterial(alpha: 0.42)
         private let crystalEdgeMaterial = Coordinator.glassMaterial(alpha: 0.35)
         private let crystalDotMaterial = Coordinator.glassMaterial(alpha: 0.7)
+        private let crystalHeatMaterial: SCNMaterial = {
+            let material = Coordinator.constantMaterial(.white, alpha: 0.93)
+            material.writesToDepthBuffer = false
+            return material
+        }()
 
         // Mesh data for the body currently shown.
         private var mesh: BodyMeshData?
@@ -213,6 +219,21 @@ struct BodyModelView: UIViewRepresentable {
                                        elements: [crystalDotElement])
                 dots.materials = [crystalDotMaterial]
                 crystalDotNode.geometry = dots
+
+                // Worked muscles: bright, saturated and nearly opaque on top of the glass.
+                let heatFacets = BodyAsset.crystalHeatFacets(for: crystal, mesh: mesh, heat: wantedHeat)
+                if heatFacets.positions.isEmpty {
+                    crystalHeatNode.geometry = nil
+                } else {
+                    let heatGeometry = SCNGeometry(
+                        sources: [SCNGeometrySource(vertices: Coordinator.scnVectors(heatFacets.positions)),
+                                  SCNGeometrySource(normals: Coordinator.scnVectors(heatFacets.normals)),
+                                  Coordinator.colorSource(heatFacets.colors)],
+                        elements: [SCNGeometryElement(indices: (0..<heatFacets.positions.count).map { Int32($0) },
+                                                      primitiveType: .triangles)])
+                    heatGeometry.materials = [crystalHeatMaterial]
+                    crystalHeatNode.geometry = heatGeometry
+                }
             } else {
                 guard let vertexSource, let normalSource, let fillElement else { return }
                 let fillColors = BodyAsset.fillColors(for: mesh, heat: wantedHeat)
@@ -321,12 +342,13 @@ struct BodyModelView: UIViewRepresentable {
         private func buildScene() {
             scene.background.contents = Hologram.background
             scene.rootNode.addChildNode(figure)
-            for node in [fillNode, lineNode, haloNode, crystalFillNode, crystalEdgeNode, crystalDotNode] {
+            for node in [fillNode, lineNode, haloNode, crystalFillNode, crystalEdgeNode, crystalDotNode, crystalHeatNode] {
                 figure.addChildNode(node)
             }
             crystalFillNode.renderingOrder = 20
             crystalEdgeNode.renderingOrder = 21
             crystalDotNode.renderingOrder = 22
+            crystalHeatNode.renderingOrder = 24
             lineNode.renderingOrder = 23
             haloNode.renderingOrder = 10
             haloNode.geometry = nil
@@ -489,6 +511,7 @@ struct BodyModelView: UIViewRepresentable {
             crystalFillNode.isHidden = !isCrystal
             crystalEdgeNode.isHidden = !isCrystal
             crystalDotNode.isHidden = !isCrystal
+            crystalHeatNode.isHidden = !isCrystal
             // Muscle outlines stay on in the crystal style, but softer so the facets lead.
             lineMaterial.transparency = isCrystal ? 0.6 : 1
             if isCrystal { lineMaterial.blendMode = .add } else { lineMaterial.blendMode = .alpha }

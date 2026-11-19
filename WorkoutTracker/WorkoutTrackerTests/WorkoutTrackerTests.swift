@@ -707,6 +707,16 @@ final class WorkoutTrackerTests: XCTestCase {
         XCTAssertNotEqual(cold, hot)
         XCTAssertEqual(BodyAsset.crystalLineColors(vertices: crystal.edgeVertices, mesh: mesh, heat: [:], edge: true).count,
                        crystal.edgeVertices.count)
+
+        // Worked muscles get their own bright layer; nothing is drawn when nothing is worked.
+        XCTAssertTrue(BodyAsset.crystalHeatFacets(for: crystal, mesh: mesh, heat: [:]).positions.isEmpty)
+        let layer = BodyAsset.crystalHeatFacets(for: crystal, mesh: mesh, heat: [.chest: 1.0])
+        XCTAssertFalse(layer.positions.isEmpty)
+        XCTAssertEqual(layer.positions.count % 3, 0)
+        XCTAssertEqual(layer.positions.count, layer.colors.count)
+        XCTAssertLessThan(layer.positions.count, crystal.positions.count / 4, "only the chest, not the whole body")
+        // Strongest heat is red: red channel leads.
+        XCTAssertTrue(layer.colors.allSatisfy { $0.x > $0.z })
     }
 
     func testCrystalStyleKeepsOnlyMuscleOutlines() throws {
