@@ -610,9 +610,10 @@ enum BodyAsset {
         return result
     }
 
-    static let crystalBase = SIMD3<Float>(0.30, 0.58, 0.98)
-    static let crystalEdge = SIMD3<Float>(0.60, 0.86, 1.0)
-    static let crystalNode = SIMD3<Float>(0.78, 0.93, 1.0)
+    // Kept fairly dim so worked muscles stand out against them.
+    static let crystalBase = SIMD3<Float>(0.20, 0.40, 0.75)
+    static let crystalEdge = SIMD3<Float>(0.42, 0.68, 0.92)
+    static let crystalNode = SIMD3<Float>(0.55, 0.80, 1.0)
 
     /// How strongly each vertex belongs to worked muscles: the tinted color, and 0 when not worked.
     private static func heatTint(for mesh: BodyMeshData, heat: [MuscleGroup: Double]) -> [(color: SIMD3<Float>, amount: Float)] {
@@ -653,9 +654,12 @@ enum BodyAsset {
                 total += tint.amount
                 if tint.amount > strongest { strongest = tint.amount; heatColor = tint.color }
             }
-            let share = min(total / 3, 1)
+            // Worked facets switch to a bright, saturated heat color (not dimmed by the facet shading),
+            // even at the soft edges of a muscle.
+            let share = min(total / 3 * 1.6, 1)
+            let heated = heatColor * (0.9 + 0.3 * brightness) * 1.35
 
-            let rgb = (crystalBase * (1 - share) + heatColor * 1.1 * share) * brightness
+            let rgb = crystalBase * brightness * (1 - share) + heated * share
             let color = SIMD4(rgb.x, rgb.y, rgb.z, 1)
             colors.append(color); colors.append(color); colors.append(color)
         }

@@ -118,9 +118,9 @@ struct BodyModelView: UIViewRepresentable {
         private let fillMaterial = Coordinator.litMaterial()
         private let lineMaterial = Coordinator.constantMaterial(.white)
         private let haloMaterial = Coordinator.constantMaterial(Hologram.glow, alpha: 0.14, additive: true)
-        private let crystalFillMaterial = Coordinator.glassMaterial(alpha: 0.5)
-        private let crystalEdgeMaterial = Coordinator.glassMaterial(alpha: 0.55)
-        private let crystalDotMaterial = Coordinator.glassMaterial(alpha: 0.95)
+        private let crystalFillMaterial = Coordinator.glassMaterial(alpha: 0.42)
+        private let crystalEdgeMaterial = Coordinator.glassMaterial(alpha: 0.35)
+        private let crystalDotMaterial = Coordinator.glassMaterial(alpha: 0.7)
 
         // Mesh data for the body currently shown.
         private var mesh: BodyMeshData?
@@ -378,9 +378,9 @@ struct BodyModelView: UIViewRepresentable {
                 let elevation: Float = 0.17
                 let distance: Float = 40
                 camera?.fieldOfView = 12.5
-                camera?.bloomIntensity = 1.4
-                camera?.bloomThreshold = 0.25
-                camera?.bloomBlurRadius = 12
+                camera?.bloomIntensity = 0.6
+                camera?.bloomThreshold = 0.6
+                camera?.bloomBlurRadius = 7
                 cameraNode.position = SCNVector3(0, 3.6 + distance * sin(elevation), distance * cos(elevation))
                 cameraNode.eulerAngles = SCNVector3(-elevation, 0, 0)
                 scene.background.contents = Hologram.crystalBackdrop
@@ -519,7 +519,7 @@ struct BodyModelView: UIViewRepresentable {
                 elements: [element]
             )
             haloMaterial.cullMode = .front
-            haloMaterial.transparency = isCrystal ? 0.07 : 0.14
+            haloMaterial.transparency = isCrystal ? 0.03 : 0.14
             halo.materials = [haloMaterial]
             haloNode.geometry = halo
 
