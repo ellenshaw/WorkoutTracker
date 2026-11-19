@@ -374,14 +374,14 @@ struct BodyModelView: UIViewRepresentable {
             key.light = SCNLight()
             key.light?.type = .directional
             key.light?.intensity = 900
-            key.eulerAngles = SCNVector3(-0.5, 0.45, 0)
+            key.eulerAngles = SCNVector3(x: -0.5, y: 0.45, z: 0)
             scene.rootNode.addChildNode(key)
 
             let rim = SCNNode()
             rim.light = SCNLight()
             rim.light?.type = .directional
             rim.light?.intensity = 350
-            rim.eulerAngles = SCNVector3(-0.2, -0.8, 0)
+            rim.eulerAngles = SCNVector3(x: -0.2, y: -0.8, z: 0)
             scene.rootNode.addChildNode(rim)
 
             // A faint glowing disc under the feet (Lines and Grid styles).
@@ -545,7 +545,10 @@ struct BodyModelView: UIViewRepresentable {
             }
 
             // Soft rim glow: a slightly inflated copy, drawn only where its far side peeks out.
-            let inflated = zip(mesh.positions, mesh.normals).map { $0 + $1 * 0.07 }
+            let glowDistance: Float = 0.07
+            let inflated: [Vec] = zip(mesh.positions, mesh.normals).map { (position: Vec, normal: Vec) -> Vec in
+                position + normal * glowDistance
+            }
             let halo = SCNGeometry(
                 sources: [SCNGeometrySource(vertices: Coordinator.scnVectors(inflated)), normals],
                 elements: [element]

@@ -543,7 +543,9 @@ enum BodyAsset {
                 }
                 guard total > 0 else { continue }
                 let n = simd_normalize(normal)
-                result.append(BodyAnchor(muscle: muscle, position: position / total + n * 0.05, normal: n))
+                let centre: Vec = position / total
+                let lifted: Vec = centre + n * 0.05
+                result.append(BodyAnchor(muscle: muscle, position: lifted, normal: n))
             }
         }
         return result
@@ -588,7 +590,9 @@ enum BodyAsset {
                 vertices.insert(v)
             }
             for (p, q) in [(a, b), (b, c), (c, a)] {
-                let key = UInt64(min(p, q)) << 32 | UInt64(max(p, q))
+                let low: UInt64 = UInt64(min(p, q))
+                let high: UInt64 = UInt64(max(p, q))
+                let key: UInt64 = (low << 32) | high
                 if edges.insert(key).inserted {
                     result.edgePositions.append(mesh.positions[p])
                     result.edgePositions.append(mesh.positions[q])
@@ -611,6 +615,15 @@ enum BodyAsset {
     }
 
     // Kept fairly dim so worked muscles stand out against them.
+    /// A stable pseudo-random offset in -spread/2 ... +spread/2 for each facet, so neighbouring
+    /// facets differ a little in brightness like cut glass.
+    private static func facetJitter(_ index: Int, spread: Float) -> Float {
+        let hashed: UInt32 = UInt32(truncatingIfNeeded: index) &* 2654435761
+        let bucket: UInt32 = hashed % 1000
+        let unit: Float = Float(bucket) / 1000
+        return (unit - 0.5) * spread
+    }
+
     static let crystalBase = SIMD3<Float>(0.20, 0.40, 0.75)
     static let crystalEdge = SIMD3<Float>(0.42, 0.68, 0.92)
     static let crystalNode = SIMD3<Float>(0.55, 0.80, 1.0)
@@ -642,8 +655,10 @@ enum BodyAsset {
 
         for t in 0..<crystal.triangleCount {
             let base = 3 * t
-            let jitter = Float((UInt32(truncatingIfNeeded: t) &* 2654435761) % 1000) / 1000 * 0.36 - 0.18
-            let brightness = max(0.55 + 0.45 * abs(simd_dot(crystal.normals[base], light)) + jitter, 0.2)
+            let jitter: Float = facetJitter(t, spread: 0.36)
+            let facing: Float = abs(simd_dot(crystal.normals[base], light))
+            let rawBrightness: Float = 0.55 + 0.45 * facing + jitter
+            let brightness: Float = max(rawBrightness, 0.2)
 
             // The facet's heat is the average of its corners, in the color of the strongest one.
             var heatColor = SIMD3<Float>.zero
@@ -657,9 +672,13 @@ enum BodyAsset {
             // Worked facets switch to a bright, saturated heat color (not dimmed by the facet shading),
             // even at the soft edges of a muscle.
             let share = min(total / 3 * 1.6, 1)
-            let heated = heatColor * (0.9 + 0.3 * brightness) * 1.35
+            let boost: Float = (0.9 + 0.3 * brightness) * 1.35
+            let heated: SIMD3<Float> = heatColor * boost
 
-            let rgb = crystalBase * brightness * (1 - share) + heated * share
+            let baseScale: Float = brightness * (1 - share)
+            let baseColor: SIMD3<Float> = crystalBase * baseScale
+            let heatPart: SIMD3<Float> = heated * share
+            let rgb: SIMD3<Float> = baseColor + heatPart
             let color = SIMD4(rgb.x, rgb.y, rgb.z, 1)
             colors.append(color); colors.append(color); colors.append(color)
         }
@@ -701,9 +720,11 @@ enum BodyAsset {
             a += normal * lift; b += normal * lift; c += normal * lift
 
             // Gentle shading across facets keeps the crystal look without dulling the color.
-            let jitter = Float((UInt32(truncatingIfNeeded: t) &* 2654435761) % 1000) / 1000 * 0.2 - 0.1
-            let shade = min(max(0.9 + 0.25 * abs(simd_dot(normal, light)) + jitter, 0.7), 1.2)
-            let rgb = simd_min(heatColor * shade, SIMD3<Float>(repeating: 1.2))
+            let jitter: Float = facetJitter(t, spread: 0.2)
+            let facing: Float = abs(simd_dot(normal, light))
+            let rawShade: Float = 0.9 + 0.25 * facing + jitter
+            let shade: Float = min(max(rawShade, 0.7), 1.2)
+            let rgb: SIMD3<Float> = simd_min(heatColor * shade, SIMD3<Float>(repeating: 1.2))
             let color = SIMD4(rgb.x, rgb.y, rgb.z, 1)
 
             result.positions += [a, b, c]
@@ -719,7 +740,8 @@ enum BodyAsset {
         let base = edge ? crystalEdge : crystalNode
         return vertices.map { v -> SIMD4<Float> in
             let tint = tints[Int(v)]
-            let rgb = base * (1 - tint.amount) + tint.color * tint.amount
+            let keep: Float = 1 - tint.amount
+            let rgb: SIMD3<Float> = base * keep + tint.color * tint.amount
             return SIMD4(rgb.x, rgb.y, rgb.z, 1)
         }
     }
@@ -746,7 +768,11 @@ enum BodyAsset {
             var f = skinFill * (1 - muscleShare) + muscleFill * muscleShare
             for (column, color) in active {
                 let w = smoothstep(mesh.weight(vertex: v, column: column), 0.15, 0.6)
-                if w > 0 { f = f * (1 - w) + color * 0.5 * w }
+                if w > 0 {
+                    let keep: Float = 1 - w
+                    let glow: Float = 0.5 * w
+                    f = f * keep + color * glow
+                }
             }
             colors.append(SIMD4(f.x, f.y, f.z, 1))
         }
@@ -766,7 +792,10 @@ enum BodyAsset {
             } else {
                 let base = active[column] ?? muscleLine
                 switch lines.kind[i] {
-                case 2: rgb = simd_min(base * 1.1 + SIMD3<Float>(repeating: 0.1), SIMD3<Float>(repeating: 1))
+                case 2:
+                    let lifted: SIMD3<Float> = base * 1.1
+                    let brightened: SIMD3<Float> = lifted + SIMD3<Float>(repeating: 0.1)
+                    rgb = simd_min(brightened, SIMD3<Float>(repeating: 1))
                 default: rgb = base * 0.75
                 }
             }
