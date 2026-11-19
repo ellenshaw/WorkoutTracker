@@ -207,30 +207,34 @@ enum HeatCalculator {
 
     /// Combines recent workouts into one intensity per muscle, fading as time passes.
     ///
-    /// Each workout contributes `intensity × (duration / 45 min)`, with the duration factor
-    /// clamped to 0.5…1.5 so one marathon session can't dominate. Its contribution then halves
-    /// every `halfLifeDays`, so a muscle's colour cools gradually from red back toward blue as it
-    /// recovers instead of vanishing on a deadline. All workouts in the window are added up per
-    /// muscle, so repeated sessions keep stacking toward the top of the scale.
+    /// A single fresh workout shows exactly the color it had on its own workout screen, so a heavy
+    /// climb that worked the forearms hard is full red here too, however short it was. Each
+    /// workout's contribution then halves every `halfLifeDays`, so the color cools gradually from
+    /// red back toward blue as the muscle recovers. A long session (over 45 minutes) counts for up
+    /// to 30% more, and short ones are never dimmed.
+    ///
+    /// All workouts in the window are added up per muscle as independent "hits":
+    /// `1 - (1 - a)(1 - b)...`. Two moderate sessions read higher than one, a third higher still,
+    /// and the total approaches but never passes the top of the scale.
     static func recoveryHeat(workouts: [Workout],
                              now: Date = Date(),
                              halfLifeDays: Double = 3.5,
                              maxDays: Double = 21) -> [MuscleGroup: Double] {
-        var scores: [MuscleGroup: Double] = [:]
+        // Product of (1 - contribution) per muscle; the result is 1 minus that.
+        var remaining: [MuscleGroup: Double] = [:]
         for workout in workouts {
             let ageDays = max(now.timeIntervalSince(workout.date) / 86_400, 0)
             guard ageDays <= maxDays else { continue }
 
             let decay = pow(0.5, ageDays / max(halfLifeDays, 0.1))
-            let factor = min(max(Double(workout.duration) / 45.0, 0.5), 1.5)
+            let lengthBoost = min(max(Double(workout.duration) / 45.0, 1.0), 1.3)
             for (muscle, intensity) in workout.heat {
-                scores[muscle, default: 0] += intensity * factor * decay
+                let contribution = min(intensity * lengthBoost * decay, 1)
+                remaining[muscle, default: 1] *= (1 - contribution)
             }
         }
-        // Soft saturation instead of a hard ceiling: every extra session keeps raising the color,
-        // with diminishing returns (a hard session ≈ 0.71, two ≈ 0.92, three ≈ 0.98).
-        return scores.compactMapValues { score in
-            score > 0.01 ? 1 - exp(-score / 0.8) : nil
+        return remaining.compactMapValues { left in
+            1 - left > 0.01 ? 1 - left : nil
         }
     }
 }

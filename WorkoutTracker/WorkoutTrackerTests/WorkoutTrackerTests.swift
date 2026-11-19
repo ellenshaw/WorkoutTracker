@@ -34,8 +34,9 @@ final class WorkoutTrackerTests: XCTestCase {
         let now = Date()
         let w = workout(minutes: 45, muscles: [.chest: 1.0, .calves: 0.35], now: now)
         let heat = HeatCalculator.recoveryHeat(workouts: [w], now: now)
-        XCTAssertEqual(heat[.chest] ?? 0, 1 - exp(-1.0 / 0.8), accuracy: 0.001)
-        XCTAssertEqual(heat[.calves] ?? 0, 1 - exp(-0.35 / 0.8), accuracy: 0.001)
+        // A fresh workout shows exactly the colors it had on its own screen.
+        XCTAssertEqual(heat[.chest] ?? 0, 1.0, accuracy: 0.001)
+        XCTAssertEqual(heat[.calves] ?? 0, 0.35, accuracy: 0.001)
         XCTAssertNil(heat[.quads])
     }
 
@@ -48,7 +49,7 @@ final class WorkoutTrackerTests: XCTestCase {
         XCTAssertGreaterThan(two, one)
 
         let many = (0..<6).map { workout(minutes: 60, daysAgo: $0, muscles: [.biceps: 1.0], now: now) }
-        XCTAssertGreaterThan(HeatCalculator.recoveryHeat(workouts: many, now: now)[.biceps] ?? 0, 0.99)
+        XCTAssertGreaterThanOrEqual(HeatCalculator.recoveryHeat(workouts: many, now: now)[.biceps] ?? 0, 0.99)
     }
 
     func testHeatFadesGraduallyInsteadOfDisappearing() {
@@ -739,17 +740,17 @@ final class WorkoutTrackerTests: XCTestCase {
 
     func testBodyTabAddsUpEveryWorkoutAndKeepsRising() {
         let now = Date()
-        // Different workouts hitting the same and different muscles.
-        let a = workout(minutes: 45, daysAgo: 0, muscles: [.chest: 1.0, .triceps: 0.65], now: now)
-        let b = workout(minutes: 45, daysAgo: 1, muscles: [.chest: 1.0, .lats: 0.65], now: now)
-        let c = workout(minutes: 45, daysAgo: 2, muscles: [.chest: 1.0, .quads: 1.0], now: now)
-        let d = workout(minutes: 45, daysAgo: 3, muscles: [.chest: 1.0], now: now)
+        // Moderate sessions, so there is headroom to keep climbing.
+        let a = workout(minutes: 45, daysAgo: 0, muscles: [.chest: 0.5, .triceps: 0.65], now: now)
+        let b = workout(minutes: 45, daysAgo: 1, muscles: [.chest: 0.5, .lats: 0.65], now: now)
+        let c = workout(minutes: 45, daysAgo: 2, muscles: [.chest: 0.5, .quads: 1.0], now: now)
+        let d = workout(minutes: 45, daysAgo: 3, muscles: [.chest: 0.5], now: now)
 
         func heat(_ workouts: [Workout]) -> [MuscleGroup: Double] {
             HeatCalculator.recoveryHeat(workouts: workouts, now: now)
         }
 
-        // The chest keeps climbing with every extra session; none of them is ignored or capped away.
+        // The chest keeps climbing with every extra session; none of them is ignored.
         let counts = (1...4).map { heat(Array([a, b, c, d].prefix($0)))[.chest] ?? 0 }
         for i in 1..<counts.count {
             XCTAssertGreaterThan(counts[i], counts[i - 1], "workout \(i + 1) should still raise the chest")
@@ -764,5 +765,23 @@ final class WorkoutTrackerTests: XCTestCase {
         // Order doesn't matter.
         XCTAssertEqual(heat([d, c, b, a])[.chest] ?? 0, all[.chest] ?? 1, accuracy: 1e-9)
     }
-}
 
+    func testOneHeavyShortWorkoutLooksTheSameOnTheBodyTab() {
+        // The bug this guards against: a 30-minute climb with heavy forearms read as yellow on the
+        // Body tab although the workout itself showed red.
+        let now = Date()
+        var climb = Workout(name: "Bouldering", category: .climbing, duration: 30, notes: "", date: now)
+        climb.heat = [.forearms: HeatLevel.heavy.intensity, .lats: HeatLevel.heavy.intensity, .biceps: HeatLevel.moderate.intensity]
+
+        let body = HeatCalculator.recoveryHeat(workouts: [climb], now: now)
+        XCTAssertEqual(body[.forearms] ?? 0, 1.0, accuracy: 0.001)
+        XCTAssertEqual(body[.biceps] ?? 0, HeatLevel.moderate.intensity, accuracy: 0.001)
+
+        // A longer session is boosted a little but never past the top.
+        var long = climb
+        long.duration = 90
+        long.heat = [.biceps: HeatLevel.moderate.intensity]
+        XCTAssertGreaterThan(HeatCalculator.recoveryHeat(workouts: [long], now: now)[.biceps] ?? 0, HeatLevel.moderate.intensity)
+        XCTAssertLessThanOrEqual(HeatCalculator.recoveryHeat(workouts: [long], now: now)[.biceps] ?? 2, 1.0)
+    }
+}
