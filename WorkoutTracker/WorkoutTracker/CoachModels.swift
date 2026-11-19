@@ -268,7 +268,8 @@ enum PlanTemplates {
                               category: session.category, duration: session.durationMinutes,
                               notes: notes.filter { !$0.isEmpty }.joined(separator: " · "), date: Date())
         if let preset {
-            workout.heat = preset.muscles.mapValues { $0.intensity }
+            let factor = HeatCalculator.durationFactor(minutes: session.durationMinutes)
+            workout.heat = preset.muscles.mapValues { min($0.intensity * factor, 1) }
         }
         return workout
     }

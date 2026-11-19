@@ -777,11 +777,125 @@ final class WorkoutTrackerTests: XCTestCase {
         XCTAssertEqual(body[.forearms] ?? 0, 1.0, accuracy: 0.001)
         XCTAssertEqual(body[.biceps] ?? 0, HeatLevel.moderate.intensity, accuracy: 0.001)
 
-        // A longer session is boosted a little but never past the top.
-        var long = climb
-        long.duration = 90
-        long.heat = [.biceps: HeatLevel.moderate.intensity]
-        XCTAssertGreaterThan(HeatCalculator.recoveryHeat(workouts: [long], now: now)[.biceps] ?? 0, HeatLevel.moderate.intensity)
-        XCTAssertLessThanOrEqual(HeatCalculator.recoveryHeat(workouts: [long], now: now)[.biceps] ?? 2, 1.0)
+    }
+
+    // MARK: Duration, session types and positions
+
+    func testDurationScalesColors() {
+        XCTAssertEqual(HeatCalculator.durationFactor(minutes: 60), 1.0, accuracy: 1e-9)
+        XCTAssertEqual(HeatCalculator.durationFactor(minutes: 30), 0.75, accuracy: 1e-9)
+        XCTAssertEqual(HeatCalculator.durationFactor(minutes: 120), 1.25, accuracy: 1e-9)
+        XCTAssertEqual(HeatCalculator.durationFactor(minutes: 600), 1.25, accuracy: 1e-9, "capped")
+        let factors = [5, 15, 30, 45, 60, 90, 120].map { HeatCalculator.durationFactor(minutes: $0) }
+        XCTAssertEqual(factors, factors.sorted(), "longer sessions never score lower")
+        XCTAssertGreaterThan(HeatCalculator.durationFactor(minutes: 0), 0.4, "even a tiny session isn't invisible")
+    }
+
+    func testEverySportAndCardioActivityHasSessionTypes() {
+        for category in [WorkoutCategory.cardio, .climbing, .sport] {
+            for preset in category.activities {
+                let modes = ActivityVariants.modes(for: preset, category: category)
+                XCTAssertFalse(modes.isEmpty, "\(preset.name) has no session types")
+                XCTAssertEqual(modes.filter(\.isDefault).count, 1, "\(preset.name) needs exactly one default")
+                XCTAssertEqual(Set(modes.map(\.name)).count, modes.count)
+                XCTAssertTrue(modes.allSatisfy { $0.multiplier > 0.3 && $0.multiplier < 1.5 })
+            }
+        }
+        XCTAssertTrue(WorkoutCategory.mobility.activities.allSatisfy {
+            ActivityVariants.modes(for: $0, category: .mobility).isEmpty
+        })
+    }
+
+    func testRolesAreWellFormed() {
+        let withRoles = WorkoutCategory.sport.activities.compactMap { ActivityVariants.roles(for: $0.name) } +
+            WorkoutCategory.cardio.activities.compactMap { ActivityVariants.roles(for: $0.name) }
+        XCTAssertGreaterThan(withRoles.count, 8)
+        for set in withRoles {
+            XCTAssertFalse(set.label.isEmpty)
+            XCTAssertEqual(Set(set.roles.map(\.name)).count, set.roles.count)
+            XCTAssertTrue(set.roles.allSatisfy { !$0.adjustments.isEmpty })
+        }
+        XCTAssertNotNil(ActivityVariants.roles(for: "Ultimate Frisbee"))
+        XCTAssertNil(ActivityVariants.roles(for: "Yoga"))
+    }
+
+    func testUltimatePositionsAndSessionTypesChangeTheColors() throws {
+        let ultimate = try XCTUnwrap(WorkoutCategory.sport.activities.first { $0.name == "Ultimate Frisbee" })
+        let modes = ActivityVariants.modes(for: ultimate, category: .sport)
+        let roles = try XCTUnwrap(ActivityVariants.roles(for: "Ultimate Frisbee")).roles
+        let game = try XCTUnwrap(modes.first { $0.name == "Game" })
+        let practice = try XCTUnwrap(modes.first { $0.name == "Practice" })
+        let tournament = try XCTUnwrap(modes.first { $0.name == "Tournament" })
+        let handler = try XCTUnwrap(roles.first { $0.name == "Handler" })
+        let cutter = try XCTUnwrap(roles.first { $0.name == "Cutter" })
+
+        func heat(_ mode: ActivityMode?, _ role: ActivityRole?) -> [MuscleGroup: Double] {
+            ActivityVariants.intensities(base: ultimate.muscles, mode: mode, role: role)
+        }
+
+        // A game works the same muscles harder than practice; a tournament harder still.
+        for muscle in [MuscleGroup.quads, .calves, .hamstrings] {
+            XCTAssertGreaterThan(heat(game, nil)[muscle] ?? 0, heat(practice, nil)[muscle] ?? 0)
+            XCTAssertGreaterThanOrEqual(heat(tournament, nil)[muscle] ?? 0, heat(game, nil)[muscle] ?? 0)
+        }
+
+        // Cutters sprint and jump: legs light up more than for a handler. Handlers throw: arms more.
+        for muscle in [MuscleGroup.quads, .hamstrings, .calves, .glutes] {
+            XCTAssertGreaterThan(heat(game, cutter)[muscle] ?? 0, heat(game, handler)[muscle] ?? 0, "\(muscle)")
+        }
+        for muscle in [MuscleGroup.shoulders, .forearms] {
+            XCTAssertGreaterThan(heat(game, handler)[muscle] ?? 0, heat(game, cutter)[muscle] ?? 0, "\(muscle)")
+        }
+
+        // Everything stays on the 0...1 scale, and barely-worked muscles are dropped.
+        for role in roles {
+            for value in heat(tournament, role).values {
+                XCTAssertGreaterThan(value, 0.05)
+                XCTAssertLessThanOrEqual(value, 1.0)
+            }
+        }
+    }
+
+    func testRunningSessionTypesScaleEffort() throws {
+        let running = try XCTUnwrap(WorkoutCategory.cardio.activities.first { $0.name == "Running" })
+        let modes = ActivityVariants.modes(for: running, category: .cardio)
+        let easy = ActivityVariants.intensities(base: running.muscles, mode: modes.first { $0.name == "Easy" }, role: nil)
+        let tempo = ActivityVariants.intensities(base: running.muscles, mode: modes.first { $0.name == "Tempo" }, role: nil)
+        let intervals = ActivityVariants.intensities(base: running.muscles, mode: modes.first { $0.name == "Intervals" }, role: nil)
+        for muscle in [MuscleGroup.quads, .calves, .hamstrings] {
+            XCTAssertLessThan(easy[muscle] ?? 0, tempo[muscle] ?? 0)
+            XCTAssertLessThanOrEqual(tempo[muscle] ?? 0, intervals[muscle] ?? 0)
+        }
+    }
+
+    func testModeAndRoleSurviveSavingAndOlderWorkoutsStillLoad() throws {
+        var w = workout(minutes: 60, muscles: [.quads: 0.8])
+        w.mode = "Game"
+        w.role = "Cutter"
+        XCTAssertEqual(w.variantText, "Game · Cutter")
+        XCTAssertTrue(w.summary.contains("Game · Cutter"))
+        let decoded = try JSONDecoder().decode([Workout].self, from: JSONEncoder().encode([w]))
+        XCTAssertEqual(decoded.first?.mode, "Game")
+        XCTAssertEqual(decoded.first?.role, "Cutter")
+
+        // Workouts saved before this existed have neither.
+        let old = #"[{"id":"3F2504E0-4F89-11D3-9A0C-0305E82C3301","name":"Run","category":"Cardio","duration":30,"notes":"","date":"2026-05-01T10:00:00Z"}]"#
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        let workouts = try decoder.decode([Workout].self, from: Data(old.utf8))
+        XCTAssertEqual(workouts.first?.variantText, "")
+        XCTAssertEqual(workouts.first?.summary, "30 min")
+    }
+
+    func testRepeatingAWorkoutRecoversItsBaseEffort() {
+        // Logging stores base × durationFactor; repeating divides it back out, so a 30-minute
+        // heavy session repeated shows "heavy" chips again, not "moderate".
+        let base = HeatLevel.heavy.intensity
+        let stored = min(base * HeatCalculator.durationFactor(minutes: 30), 1)
+        XCTAssertLessThan(stored, base)
+        let restored = min(stored / HeatCalculator.durationFactor(minutes: 30), 1)
+        XCTAssertEqual(restored, base, accuracy: 1e-9)
+        XCTAssertEqual(HeatLevel(nearest: restored), .heavy)
     }
 }
+

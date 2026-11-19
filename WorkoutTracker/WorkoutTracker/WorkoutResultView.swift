@@ -137,6 +137,11 @@ struct WorkoutResultView: View {
                     .font(.title3.weight(.semibold))
                 Text("\(workout.category.rawValue) · \(workout.duration) min")
                     .foregroundStyle(.secondary)
+                if !workout.variantText.isEmpty {
+                    Text(workout.variantText)
+                        .font(.subheadline.weight(.medium))
+                        .foregroundStyle(Theme.accent)
+                }
                 Text(workout.date.formatted(date: .abbreviated, time: .shortened))
                     .font(.caption)
                     .foregroundStyle(.secondary)

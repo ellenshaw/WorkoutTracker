@@ -18,8 +18,11 @@ struct LogActivityView: View {
     @State private var duration: String
     @State private var date = Date()
     @State private var notes: String
-    @State private var levels: [MuscleGroup: HeatLevel]
+    /// How hard each muscle works in this session (0...1), before the duration scaling.
+    @State private var intensities: [MuscleGroup: Double]
     @State private var musclesEdited: Bool
+    @State private var selectedMode: String?
+    @State private var selectedRole: String?
 
     @FocusState private var keyboardFocused: Bool
 
@@ -37,8 +40,12 @@ struct LogActivityView: View {
         _name = State(initialValue: template?.name ?? "")
         _duration = State(initialValue: template.map { String($0.duration) } ?? "")
         _notes = State(initialValue: template?.notes ?? "")
-        _levels = State(initialValue: template?.heat.mapValues { HeatLevel(nearest: $0) } ?? [:])
+        // A saved workout's colors already include its duration, so undo that to get back the base effort.
+        let factor = template.map { HeatCalculator.durationFactor(minutes: $0.duration) } ?? 1
+        _intensities = State(initialValue: template?.heat.mapValues { min($0 / factor, 1) } ?? [:])
         _musclesEdited = State(initialValue: template != nil)
+        _selectedMode = State(initialValue: template.flatMap { $0.mode.isEmpty ? nil : $0.mode })
+        _selectedRole = State(initialValue: template.flatMap { $0.role.isEmpty ? nil : $0.role })
     }
 
     private var minutes: Int { Int(duration) ?? 0 }
@@ -52,6 +59,7 @@ struct LogActivityView: View {
             VStack(spacing: 16) {
                 activityCard
                 if selectedActivity != nil {
+                    if hasVariants { variantCard }
                     detailsCard
                     musclesCard
                 }
@@ -153,15 +161,111 @@ struct LogActivityView: View {
         .cardStyle()
     }
 
+    // MARK: Session type and position
+
+    private var currentPreset: ActivityPreset? {
+        category.activities.first { $0.name == selectedActivity }
+    }
+
+    private var modes: [ActivityMode] {
+        currentPreset.map { ActivityVariants.modes(for: $0, category: category) } ?? []
+    }
+
+    private var roleSet: (label: String, roles: [ActivityRole])? {
+        currentPreset.flatMap { ActivityVariants.roles(for: $0.name) }
+    }
+
+    private var hasVariants: Bool { !modes.isEmpty || roleSet != nil }
+
+    private var selectedModeValue: ActivityMode? { modes.first { $0.name == selectedMode } }
+    private var selectedRoleValue: ActivityRole? { roleSet?.roles.first { $0.name == selectedRole } }
+
+    private var variantCard: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            if !modes.isEmpty {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Session type")
+                        .font(.headline)
+                    chipRow {
+                        ForEach(modes) { mode in
+                            ChoiceChip(title: mode.name, selected: selectedMode == mode.name, tint: category.tint) {
+                                selectedMode = mode.name
+                                applyVariants()
+                            }
+                        }
+                    }
+                }
+            }
+
+            if let roleSet {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text(roleSet.label)
+                        .font(.headline)
+                    chipRow {
+                        ChoiceChip(title: "Any", selected: selectedRole == nil, tint: category.tint) {
+                            selectedRole = nil
+                            applyVariants()
+                        }
+                        ForEach(roleSet.roles) { role in
+                            ChoiceChip(title: role.name, selected: selectedRole == role.name, tint: category.tint) {
+                                selectedRole = role.name
+                                applyVariants()
+                            }
+                        }
+                    }
+                }
+            }
+
+            Text("Session type, position and how long you go all change how strongly each muscle lights up.")
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .cardStyle()
+    }
+
+    private func chipRow<Content: View>(@ViewBuilder _ content: () -> Content) -> some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 8) { content() }
+        }
+    }
+
+    /// Recomputes the muscles from the activity, session type and position, unless the user has
+    /// set muscles by hand.
+    private func applyVariants() {
+        guard !musclesEdited, let preset = currentPreset else { return }
+        intensities = ActivityVariants.intensities(base: preset.muscles, mode: selectedModeValue, role: selectedRoleValue)
+    }
+
+    /// The muscle chips show the nearest of light / moderate / heavy; tapping one sets that exact level.
+    private var chipLevels: Binding<[MuscleGroup: HeatLevel]> {
+        Binding(
+            get: { intensities.mapValues { HeatLevel(nearest: $0) } },
+            set: { updated in
+                let current = intensities.mapValues { HeatLevel(nearest: $0) }
+                for muscle in MuscleGroup.allCases {
+                    let newLevel = updated[muscle] ?? HeatLevel.none
+                    if newLevel != (current[muscle] ?? HeatLevel.none) {
+                        if newLevel == HeatLevel.none {
+                            intensities.removeValue(forKey: muscle)
+                        } else {
+                            intensities[muscle] = newLevel.intensity
+                        }
+                    }
+                }
+            }
+        )
+    }
+
     private var musclesCard: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Muscles worked")
                 .font(.headline)
-            Text("Tap a muscle to set how hard you worked it: yellow is light, orange is moderate, red is heavy.")
+            Text("Tap a muscle to set how hard you worked it, from light (green) to heavy (red). The colors you see afterward also scale with the session length: about \(Int((HeatCalculator.durationFactor(minutes: max(minutes, 1)) * 100).rounded()))% at \(max(minutes, 1)) min.")
                 .font(.footnote)
                 .foregroundStyle(.secondary)
 
-            MuscleChipPicker(levels: $levels) { musclesEdited = true }
+            MuscleChipPicker(levels: chipLevels) { musclesEdited = true }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .cardStyle()
@@ -172,9 +276,9 @@ struct LogActivityView: View {
     private func choose(_ preset: ActivityPreset) {
         selectedActivity = preset.name
         name = preset.name
-        if !musclesEdited {
-            levels = preset.muscles
-        }
+        selectedMode = ActivityVariants.modes(for: preset, category: category).first { $0.isDefault }?.name
+        selectedRole = nil
+        applyVariants()
     }
 
     private func chooseCustom() {
@@ -192,8 +296,34 @@ struct LogActivityView: View {
             notes: notes.trimmingCharacters(in: .whitespacesAndNewlines),
             date: date
         )
-        workout.heat = levels.mapValues { $0.intensity }
+        // Longer sessions light the muscles up more, shorter ones less.
+        let factor = HeatCalculator.durationFactor(minutes: minutes)
+        workout.heat = intensities.mapValues { min($0 * factor, 1) }
+        workout.mode = selectedMode ?? ""
+        workout.role = selectedRole ?? ""
         onSave(workout)
+    }
+}
+
+private struct ChoiceChip: View {
+    let title: String
+    let selected: Bool
+    let tint: Color
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            Text(title)
+                .font(.subheadline.weight(.medium))
+                .padding(.horizontal, 14)
+                .padding(.vertical, 8)
+                .background(selected ? tint.opacity(0.25) : Color(.tertiarySystemFill))
+                .overlay(Capsule().stroke(selected ? tint : .clear, lineWidth: 1.5))
+                .clipShape(Capsule())
+        }
+        .buttonStyle(.plain)
+        .foregroundStyle(.primary)
+        .accessibilityAddTraits(selected ? .isSelected : [])
     }
 }
 

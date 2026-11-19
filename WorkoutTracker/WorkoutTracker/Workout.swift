@@ -38,6 +38,9 @@ struct Workout: Identifiable, Codable, Hashable {
     var exercises: [LoggedExercise] = []
     /// Pinned workouts show up on the home screen as one-tap templates.
     var isPinned = false
+    /// Session type ("Game", "Tempo", "Practice"...) and position or style ("Cutter", "Handler"...).
+    var mode = ""
+    var role = ""
 
     init(id: UUID = UUID(),
          name: String,
@@ -47,7 +50,9 @@ struct Workout: Identifiable, Codable, Hashable {
          date: Date,
          muscleIntensity: [String: Int] = [:],
          exercises: [LoggedExercise] = [],
-         isPinned: Bool = false) {
+         isPinned: Bool = false,
+         mode: String = "",
+         role: String = "") {
         self.id = id
         self.name = name
         self.category = category
@@ -57,10 +62,12 @@ struct Workout: Identifiable, Codable, Hashable {
         self.muscleIntensity = muscleIntensity
         self.exercises = exercises
         self.isPinned = isPinned
+        self.mode = mode
+        self.role = role
     }
 
     private enum CodingKeys: String, CodingKey {
-        case id, name, category, duration, notes, date, muscleIntensity, exercises, isPinned
+        case id, name, category, duration, notes, date, muscleIntensity, exercises, isPinned, mode, role
         /// Written by older versions as steps 1–3 instead of percentages.
         case muscleLevels
     }
@@ -76,6 +83,8 @@ struct Workout: Identifiable, Codable, Hashable {
         date = try c.decode(Date.self, forKey: .date)
         exercises = try c.decodeIfPresent([LoggedExercise].self, forKey: .exercises) ?? []
         isPinned = try c.decodeIfPresent(Bool.self, forKey: .isPinned) ?? false
+        mode = try c.decodeIfPresent(String.self, forKey: .mode) ?? ""
+        role = try c.decodeIfPresent(String.self, forKey: .role) ?? ""
 
         if let percent = try c.decodeIfPresent([String: Int].self, forKey: .muscleIntensity) {
             muscleIntensity = percent
@@ -99,6 +108,8 @@ struct Workout: Identifiable, Codable, Hashable {
         try c.encode(muscleIntensity, forKey: .muscleIntensity)
         try c.encode(exercises, forKey: .exercises)
         try c.encode(isPinned, forKey: .isPinned)
+        try c.encode(mode, forKey: .mode)
+        try c.encode(role, forKey: .role)
     }
 
     /// How hard each muscle was worked, 0 (not at all) to 1 (maximum).
@@ -129,10 +140,15 @@ struct Workout: Identifiable, Codable, Hashable {
         exercises.reduce(0) { $0 + $1.volumeKg }
     }
 
+    /// "Game · Cutter": the session type and position, when there are any.
+    var variantText: String {
+        [mode, role].filter { !$0.isEmpty }.joined(separator: " · ")
+    }
+
     /// One-line description for lists and pinned cards.
     var summary: String {
         if exercises.isEmpty {
-            return "\(duration) min"
+            return variantText.isEmpty ? "\(duration) min" : "\(duration) min · \(variantText)"
         }
         let count = exercises.count
         return "\(count) exercise\(count == 1 ? "" : "s") · \(totalSets) sets"

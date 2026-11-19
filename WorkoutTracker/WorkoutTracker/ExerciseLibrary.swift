@@ -273,3 +273,185 @@ extension WorkoutCategory {
         }
     }
 }
+
+
+// MARK: - Session types and positions
+
+/// How a session was played: practice, a game, an easy run, a tempo run... A multiplier on the
+/// activity's usual muscle effort.
+struct ActivityMode: Hashable, Identifiable {
+    var name: String
+    var multiplier: Double
+    /// Selected when the activity is first chosen.
+    var isDefault = false
+
+    var id: String { name }
+}
+
+/// A position (handler, cutter, goalkeeper...) or style (a swimming stroke). Adds to or takes from
+/// the activity's usual intensity for particular muscles.
+struct ActivityRole: Hashable, Identifiable {
+    var name: String
+    var adjustments: [MuscleGroup: Double]
+
+    var id: String { name }
+}
+
+enum ActivityVariants {
+    private static let teamOrRacquet: [ActivityMode] = [
+        ActivityMode(name: "Practice", multiplier: 0.75),
+        ActivityMode(name: "Pickup", multiplier: 0.9),
+        ActivityMode(name: "Game", multiplier: 1.0, isDefault: true),
+        ActivityMode(name: "Tournament", multiplier: 1.15)
+    ]
+
+    private static let endurance: [ActivityMode] = [
+        ActivityMode(name: "Easy", multiplier: 0.6),
+        ActivityMode(name: "Long", multiplier: 0.85),
+        ActivityMode(name: "Tempo", multiplier: 1.0, isDefault: true),
+        ActivityMode(name: "Intervals", multiplier: 1.2),
+        ActivityMode(name: "Race", multiplier: 1.25)
+    ]
+
+    private static let walking: [ActivityMode] = [
+        ActivityMode(name: "Easy", multiplier: 0.7),
+        ActivityMode(name: "Brisk", multiplier: 1.0, isDefault: true),
+        ActivityMode(name: "Hard", multiplier: 1.2)
+    ]
+
+    private static let combat: [ActivityMode] = [
+        ActivityMode(name: "Drills", multiplier: 0.7),
+        ActivityMode(name: "Sparring", multiplier: 1.0, isDefault: true),
+        ActivityMode(name: "Competition", multiplier: 1.2)
+    ]
+
+    private static let individual: [ActivityMode] = [
+        ActivityMode(name: "Casual", multiplier: 0.75),
+        ActivityMode(name: "Session", multiplier: 1.0, isDefault: true),
+        ActivityMode(name: "Competition", multiplier: 1.15)
+    ]
+
+    private static let climbing: [ActivityMode] = [
+        ActivityMode(name: "Warm-up", multiplier: 0.5),
+        ActivityMode(name: "Volume", multiplier: 0.9),
+        ActivityMode(name: "Training", multiplier: 1.0, isDefault: true),
+        ActivityMode(name: "Project", multiplier: 1.2)
+    ]
+
+    static func modes(for preset: ActivityPreset, category: WorkoutCategory) -> [ActivityMode] {
+        switch category {
+        case .strength, .mobility:
+            return []
+        case .cardio:
+            return ["Walking", "Hiking"].contains(preset.name) ? walking : endurance
+        case .climbing:
+            return climbing
+        case .sport:
+            switch preset.name {
+            case "Boxing", "Martial Arts", "Wrestling", "Jiu-Jitsu", "Fencing":
+                return combat
+            case "Golf", "Surfing", "Skateboarding", "Skiing / Snowboarding", "Kayaking", "Gymnastics":
+                return individual
+            default:
+                return teamOrRacquet
+            }
+        }
+    }
+
+    private static func role(_ name: String, _ adjustments: [MuscleGroup: Double]) -> ActivityRole {
+        ActivityRole(name: name, adjustments: adjustments)
+    }
+
+    /// The positions (or styles) that change which muscles work hardest, with the label to show.
+    static func roles(for activity: String) -> (label: String, roles: [ActivityRole])? {
+        switch activity {
+        case "Ultimate Frisbee":
+            return ("Position", [
+                role("Handler", [.shoulders: 0.2, .forearms: 0.25, .abs: 0.1, .quads: -0.1, .calves: -0.1]),
+                role("Cutter", [.quads: 0.25, .hamstrings: 0.25, .calves: 0.25, .glutes: 0.2, .shoulders: -0.1]),
+                role("Hybrid", [.quads: 0.1, .hamstrings: 0.1, .forearms: 0.1])
+            ])
+        case "Soccer":
+            return ("Position", [
+                role("Goalkeeper", [.shoulders: 0.3, .forearms: 0.3, .quads: -0.3, .hamstrings: -0.3, .calves: -0.3, .glutes: -0.2]),
+                role("Defender", [.calves: 0.1, .shoulders: 0.1]),
+                role("Midfielder", [.calves: 0.2, .quads: 0.1, .glutes: 0.1]),
+                role("Striker", [.hamstrings: 0.2, .glutes: 0.2, .quads: 0.1])
+            ])
+        case "Basketball":
+            return ("Position", [
+                role("Guard", [.calves: 0.15, .quads: 0.1, .forearms: 0.1]),
+                role("Forward", [.shoulders: 0.15, .glutes: 0.1, .triceps: 0.1]),
+                role("Center", [.shoulders: 0.25, .chest: 0.25, .triceps: 0.2, .calves: -0.1])
+            ])
+        case "Volleyball":
+            return ("Position", [
+                role("Setter", [.shoulders: 0.15, .forearms: 0.3, .triceps: 0.1]),
+                role("Hitter", [.shoulders: 0.3, .quads: 0.2, .calves: 0.2, .abs: 0.15]),
+                role("Libero", [.quads: 0.25, .glutes: 0.15, .hamstrings: 0.15, .shoulders: -0.1])
+            ])
+        case "Hockey":
+            return ("Position", [
+                role("Forward", [.quads: 0.1, .glutes: 0.1]),
+                role("Defense", [.shoulders: 0.1, .abs: 0.1]),
+                role("Goalie", [.quads: 0.2, .hamstrings: 0.3, .glutes: 0.2, .forearms: 0.2, .shoulders: -0.1])
+            ])
+        case "Rugby":
+            return ("Position", [
+                role("Forward", [.chest: 0.2, .shoulders: 0.2, .traps: 0.2, .lats: 0.1, .quads: 0.1]),
+                role("Back", [.hamstrings: 0.2, .calves: 0.2, .glutes: 0.15])
+            ])
+        case "Football":
+            return ("Position", [
+                role("Quarterback", [.shoulders: 0.3, .forearms: 0.2, .obliques: 0.2, .quads: -0.2, .hamstrings: -0.2]),
+                role("Lineman", [.chest: 0.3, .triceps: 0.3, .shoulders: 0.2, .glutes: 0.2, .quads: 0.2]),
+                role("Receiver / Back", [.hamstrings: 0.3, .calves: 0.2, .glutes: 0.2]),
+                role("Linebacker", [.quads: 0.2, .shoulders: 0.2, .abs: 0.1])
+            ])
+        case "Baseball / Softball":
+            return ("Position", [
+                role("Pitcher", [.shoulders: 0.3, .obliques: 0.2, .forearms: 0.2, .quads: 0.1, .hamstrings: 0.1]),
+                role("Catcher", [.quads: 0.3, .glutes: 0.2, .calves: 0.1, .forearms: 0.1]),
+                role("Infield", [.quads: 0.1, .hamstrings: 0.1, .calves: 0.1]),
+                role("Outfield", [.hamstrings: 0.2, .calves: 0.2, .quads: 0.1])
+            ])
+        case "Cricket":
+            return ("Role", [
+                role("Batter", [.forearms: 0.2, .obliques: 0.2]),
+                role("Bowler", [.shoulders: 0.3, .obliques: 0.2, .quads: 0.2, .forearms: 0.1]),
+                role("Fielder", [.hamstrings: 0.15, .calves: 0.15])
+            ])
+        case "Tennis", "Pickleball", "Badminton", "Table Tennis", "Squash":
+            return ("Format", [
+                role("Singles", [.quads: 0.15, .calves: 0.15, .glutes: 0.1]),
+                role("Doubles", [.shoulders: 0.1])
+            ])
+        case "Swimming":
+            return ("Stroke", [
+                role("Freestyle", [.lats: 0.05]),
+                role("Breaststroke", [.chest: 0.3, .quads: 0.3, .glutes: 0.2, .lats: -0.3, .triceps: -0.2]),
+                role("Butterfly", [.shoulders: 0.2, .abs: 0.3, .chest: 0.2, .lats: 0.1]),
+                role("Backstroke", [.lats: 0.15, .triceps: 0.1, .glutes: 0.1, .chest: -0.3])
+            ])
+        default:
+            return nil
+        }
+    }
+
+    /// The muscle intensities (0...1) for an activity played in a given way: the usual muscles,
+    /// plus the position's adjustments, all scaled by the session type's effort. Anything that
+    /// ends up barely worked is dropped.
+    static func intensities(base: [MuscleGroup: HeatLevel], mode: ActivityMode?, role: ActivityRole?) -> [MuscleGroup: Double] {
+        var values = base.mapValues { $0.intensity }
+        for (muscle, change) in role?.adjustments ?? [:] {
+            values[muscle, default: 0] += change
+        }
+        let multiplier = mode?.multiplier ?? 1
+        var result: [MuscleGroup: Double] = [:]
+        for (muscle, value) in values {
+            let scaled = min(max(value * multiplier, 0), 1)
+            if scaled > 0.05 { result[muscle] = scaled }
+        }
+        return result
+    }
+}

@@ -193,6 +193,15 @@ enum WorkoutCategory: String, CaseIterable, Codable, Identifiable {
 
 /// Pure calculation so it can be unit tested without a store.
 enum HeatCalculator {
+    /// How a session's length scales the color of the muscles it worked. 60 minutes is the
+    /// activity's usual effort (×1.0); shorter sessions are lighter (15 min ≈ ×0.63, 30 ≈ ×0.75)
+    /// and longer ones heavier (90 min ≈ ×1.13), up to ×1.25 at two hours.
+    static func durationFactor(minutes: Int) -> Double {
+        let m = Double(max(minutes, 0))
+        if m <= 60 { return 0.5 + 0.5 * m / 60 }
+        return 1 + 0.25 * min((m - 60) / 60, 1)
+    }
+
     /// Turns a strength session into muscle intensity (0...1). A set counts 1 for each primary
     /// muscle and 0.5 for each secondary muscle; 10 points is the top of the scale.
     static func strengthHeat(exercises: [LoggedExercise]) -> [MuscleGroup: Double] {
@@ -210,8 +219,8 @@ enum HeatCalculator {
     /// A single fresh workout shows exactly the color it had on its own workout screen, so a heavy
     /// climb that worked the forearms hard is full red here too, however short it was. Each
     /// workout's contribution then halves every `halfLifeDays`, so the color cools gradually from
-    /// red back toward blue as the muscle recovers. A long session (over 45 minutes) counts for up
-    /// to 30% more, and short ones are never dimmed.
+    /// red back toward blue as the muscle recovers. Session length is already part of each
+    /// workout's own colors (see `durationFactor`), so it isn't applied a second time here.
     ///
     /// All workouts in the window are added up per muscle as independent "hits":
     /// `1 - (1 - a)(1 - b)...`. Two moderate sessions read higher than one, a third higher still,
@@ -227,9 +236,8 @@ enum HeatCalculator {
             guard ageDays <= maxDays else { continue }
 
             let decay = pow(0.5, ageDays / max(halfLifeDays, 0.1))
-            let lengthBoost = min(max(Double(workout.duration) / 45.0, 1.0), 1.3)
             for (muscle, intensity) in workout.heat {
-                let contribution = min(intensity * lengthBoost * decay, 1)
+                let contribution = min(intensity * decay, 1)
                 remaining[muscle, default: 1] *= (1 - contribution)
             }
         }
