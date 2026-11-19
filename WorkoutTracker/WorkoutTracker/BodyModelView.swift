@@ -119,9 +119,10 @@ struct BodyModelView: UIViewRepresentable {
         private let fillMaterial = Coordinator.litMaterial()
         private let lineMaterial = Coordinator.constantMaterial(.white)
         private let haloMaterial = Coordinator.constantMaterial(Hologram.glow, alpha: 0.14, additive: true)
-        /// Brightness of the blue crystal body (facets, edges, nodes, outlines, glow). Lower is darker.
-        /// The heat colors are deliberately not affected, so they stay vivid against a darker body.
-        private static let crystalBrightness: CGFloat = 0.5
+        /// Brightness of the blue crystal body itself (facets, edges, nodes, halo). Lower is darker.
+        /// The heat colors, the bloom and the muscle outlines are deliberately not tied to this, so
+        /// the heat map looks the same however dark the body is.
+        private static let crystalBrightness: CGFloat = 0.4
 
         private let crystalFillMaterial = Coordinator.glassMaterial(alpha: 0.42 * Coordinator.crystalBrightness)
         private let crystalEdgeMaterial = Coordinator.glassMaterial(alpha: 0.35 * Coordinator.crystalBrightness)
@@ -404,7 +405,7 @@ struct BodyModelView: UIViewRepresentable {
                 let elevation: Float = 0.17
                 let distance: Float = 40
                 camera?.fieldOfView = 12.5
-                camera?.bloomIntensity = 0.6 * Coordinator.crystalBrightness
+                camera?.bloomIntensity = 0.3
                 camera?.bloomThreshold = 0.6
                 camera?.bloomBlurRadius = 7
                 cameraNode.position = SCNVector3(0, 3.6 + distance * sin(elevation), distance * cos(elevation))
@@ -517,7 +518,7 @@ struct BodyModelView: UIViewRepresentable {
             crystalDotNode.isHidden = !isCrystal
             crystalHeatNode.isHidden = !isCrystal
             // Muscle outlines stay on in the crystal style, but softer so the facets lead.
-            lineMaterial.transparency = isCrystal ? 0.6 * Coordinator.crystalBrightness : 1
+            lineMaterial.transparency = isCrystal ? 0.3 : 1
             if isCrystal { lineMaterial.blendMode = .add } else { lineMaterial.blendMode = .alpha }
 
             if let crystal, isCrystal {
