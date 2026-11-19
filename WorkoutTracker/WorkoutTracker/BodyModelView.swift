@@ -403,7 +403,7 @@ struct BodyModelView: UIViewRepresentable {
                 let elevation: Float = 0.17
                 let distance: Float = 40
                 camera?.fieldOfView = 12.5
-                camera?.bloomIntensity = 0.6 * Float(Coordinator.crystalBrightness)
+                camera?.bloomIntensity = 0.6 * Coordinator.crystalBrightness
                 camera?.bloomThreshold = 0.6
                 camera?.bloomBlurRadius = 7
                 cameraNode.position = SCNVector3(0, 3.6 + distance * sin(elevation), distance * cos(elevation))
