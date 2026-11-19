@@ -672,5 +672,56 @@ final class WorkoutTrackerTests: XCTestCase {
             XCTAssertFalse(json.contains(forbidden), "context should not contain \(forbidden)")
         }
     }
+
+    // MARK: Crystal hologram
+
+    func testCrystalMeshIsBuiltFromTheLowPolyTriangles() throws {
+        let base = try XCTUnwrap(BodyAsset.loadBase())
+        XCTAssertGreaterThan(base.lowPolyTriangles.count, 3 * 1000, "low-poly triangles missing")
+        XCTAssertLessThan(base.lowPolyTriangles.count, 3 * 6000)
+        XCTAssertEqual(base.lowPolyTriangles.count % 3, 0)
+        XCTAssertTrue(base.lowPolyTriangles.allSatisfy { Int($0) < base.positions.count })
+
+        let mesh = BodyAsset.morph(base, profile: BodyProfile(gender: .male))
+        let crystal = BodyAsset.crystal(for: mesh, triangles: base.lowPolyTriangles)
+
+        XCTAssertGreaterThan(crystal.triangleCount, 1000)
+        XCTAssertEqual(crystal.positions.count, crystal.normals.count)
+        XCTAssertEqual(crystal.positions.count, crystal.corners.count)
+        XCTAssertEqual(crystal.positions.count % 3, 0)
+        // Flat shading: every unit normal, pointing away from the body's centre line.
+        XCTAssertTrue(crystal.normals.allSatisfy { abs(simd_length($0) - 1) < 0.01 })
+
+        // Each edge appears once, so there are fewer edges than triangle sides.
+        XCTAssertEqual(crystal.edgePositions.count % 2, 0)
+        XCTAssertLessThan(crystal.edgePositions.count / 2, crystal.triangleCount * 3)
+        XCTAssertGreaterThan(crystal.edgePositions.count / 2, crystal.triangleCount)
+        XCTAssertEqual(crystal.edgePositions.count, crystal.edgeVertices.count)
+        XCTAssertEqual(crystal.dotPositions.count, crystal.dotVertices.count)
+        XCTAssertGreaterThan(crystal.dotPositions.count, 1000)
+
+        // Colors: one per corner, edge vertex and node; heat changes them.
+        let cold = BodyAsset.crystalFillColors(for: crystal, mesh: mesh, heat: [:])
+        let hot = BodyAsset.crystalFillColors(for: crystal, mesh: mesh, heat: [.chest: 1.0])
+        XCTAssertEqual(cold.count, crystal.positions.count)
+        XCTAssertNotEqual(cold, hot)
+        XCTAssertEqual(BodyAsset.crystalLineColors(vertices: crystal.edgeVertices, mesh: mesh, heat: [:], edge: true).count,
+                       crystal.edgeVertices.count)
+    }
+
+    func testCrystalStyleKeepsOnlyMuscleOutlines() throws {
+        let mesh = try XCTUnwrap(BodyAsset.load())
+        let crystalLines = BodyAsset.lines(for: mesh, style: .crystal)
+        XCTAssertFalse(crystalLines.kind.isEmpty)
+        XCTAssertTrue(crystalLines.kind.allSatisfy { $0 == 2 }, "crystal draws its own facets; only outlines remain")
+        let regular = BodyAsset.lines(for: mesh, style: .lines)
+        XCTAssertTrue(regular.kind.contains(0))
+        XCTAssertTrue(regular.kind.contains(1))
+    }
+
+    func testHologramStylesIncludeCrystalFirst() {
+        XCTAssertEqual(HologramStyle.allCases.first, .crystal)
+        XCTAssertEqual(Set(HologramStyle.allCases.map(\.title)), ["Crystal", "Lines", "Grid"])
+    }
 }
 

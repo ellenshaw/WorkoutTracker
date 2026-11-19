@@ -91,10 +91,19 @@ enum HeightUnit: String, CaseIterable, Identifiable {
 
 /// How the hologram's skin is drawn.
 enum HologramStyle: String, CaseIterable, Identifiable {
+    /// Faceted glass body with glowing nodes, light rings and beams.
+    case crystal
     case lines, grid
 
     var id: String { rawValue }
-    var title: String { self == .lines ? "Lines" : "Grid" }
+
+    var title: String {
+        switch self {
+        case .crystal: return "Crystal"
+        case .lines: return "Lines"
+        case .grid: return "Grid"
+        }
+    }
 }
 
 enum Theme {

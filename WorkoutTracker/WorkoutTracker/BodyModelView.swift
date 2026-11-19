@@ -2,9 +2,9 @@
 //  BodyModelView.swift
 //  WorkoutTracker
 //
-//  A holographic 3D anatomy figure. Each muscle is a raised, outlined shape with fibre lines
-//  running in its natural direction; worked muscles glow on the blue-to-red heat scale and get a
-//  name label. Tap any muscle to identify it.
+//  A holographic 3D anatomy figure. Three looks: Crystal (a faceted glass body with glowing
+//  nodes inside light rings and beams), Lines (scan-lines) and Grid. Worked muscles glow on the
+//  blue-to-red heat scale and get a name label. Tap any muscle to identify it.
 //
 
 import SwiftUI
@@ -14,6 +14,24 @@ import SceneKit
 enum Hologram {
     static let background = UIColor(red: 0.03, green: 0.05, blue: 0.10, alpha: 1)
     static let glow = UIColor(red: 0.25, green: 0.60, blue: 1.0, alpha: 1)
+    static let ring = UIColor(red: 0.35, green: 0.75, blue: 1.0, alpha: 1)
+
+    /// Deep navy that brightens to blue behind the figure, like a lit chamber.
+    static let crystalBackdrop: UIImage = {
+        let size = CGSize(width: 512, height: 512)
+        return UIGraphicsImageRenderer(size: size).image { context in
+            let space = CGColorSpaceCreateDeviceRGB()
+            let colors = [
+                UIColor(red: 0.03, green: 0.17, blue: 0.40, alpha: 1).cgColor,
+                UIColor(red: 0.02, green: 0.09, blue: 0.24, alpha: 1).cgColor,
+                Hologram.background.cgColor
+            ] as CFArray
+            guard let gradient = CGGradient(colorsSpace: space, colors: colors, locations: [0, 0.5, 1]) else { return }
+            let center = CGPoint(x: size.width / 2, y: size.height * 0.4)
+            context.cgContext.drawRadialGradient(gradient, startCenter: center, startRadius: 0,
+                                                 endCenter: center, endRadius: size.width * 0.75, options: [.drawsAfterEndLocation])
+        }
+    }()
 }
 
 /// Where a muscle's label should point, in the 3D view's own coordinates.
@@ -36,7 +54,7 @@ struct BodyModelView: UIViewRepresentable {
 
     init(heat: [MuscleGroup: Double],
          profile: BodyProfile,
-         style: HologramStyle = .lines,
+         style: HologramStyle = .crystal,
          flipToken: Int = 0,
          selected: MuscleGroup? = nil,
          onSelect: @escaping (MuscleGroup?) -> Void = { _ in },
@@ -89,23 +107,42 @@ struct BodyModelView: UIViewRepresentable {
         var onLabels: ([MuscleLabel]) -> Void = { _ in }
 
         private let figure = SCNNode()
+        private let cameraNode = SCNNode()
+        private let decorations = SCNNode()      // rings, beams and glowing floor (crystal style)
+        private let legacyFloor = SCNNode()
         private let fillNode = SCNNode()
         private let lineNode = SCNNode()
         private let haloNode = SCNNode()
+        private let crystalFillNode = SCNNode()
+        private let crystalEdgeNode = SCNNode()
+        private let crystalDotNode = SCNNode()
+
         private let fillMaterial = Coordinator.litMaterial()
         private let lineMaterial = Coordinator.constantMaterial(.white)
+        private let haloMaterial = Coordinator.constantMaterial(Hologram.glow, alpha: 0.14, additive: true)
+        private let crystalFillMaterial = Coordinator.glassMaterial(alpha: 0.5)
+        private let crystalEdgeMaterial = Coordinator.glassMaterial(alpha: 0.55)
+        private let crystalDotMaterial = Coordinator.glassMaterial(alpha: 0.95)
 
         // Mesh data for the body currently shown.
         private var mesh: BodyMeshData?
         private var lines: BodyLines?
+        private var crystal: BodyAsset.CrystalMesh?
         private var vertexSource: SCNGeometrySource?
         private var normalSource: SCNGeometrySource?
         private var fillElement: SCNGeometryElement?
         private var lineVertexSource: SCNGeometrySource?
         private var lineElement: SCNGeometryElement?
+        private var crystalFillSources: [SCNGeometrySource] = []
+        private var crystalFillElement: SCNGeometryElement?
+        private var crystalEdgeSource: SCNGeometrySource?
+        private var crystalEdgeElement: SCNGeometryElement?
+        private var crystalDotSource: SCNGeometrySource?
+        private var crystalDotElement: SCNGeometryElement?
 
         private var currentProfile: BodyProfile?
         private var currentStyle: HologramStyle?
+        private var sceneStyle: HologramStyle?
         private var buildGeneration = 0
         private var wantedHeat: [MuscleGroup: Double] = [:]
         private var shownHeat: [MuscleGroup: Double]?
@@ -133,6 +170,8 @@ struct BodyModelView: UIViewRepresentable {
             labelTargets = targets
             labelLock.unlock()
 
+            if style != sceneStyle { applySceneStyle(style) }
+
             if profile != currentProfile || style != currentStyle {
                 loadBody(profile, style: style)
             } else {
@@ -141,23 +180,49 @@ struct BodyModelView: UIViewRepresentable {
         }
 
         private func applyHeat() {
-            guard let mesh, let lines,
-                  let vertexSource, let normalSource, let fillElement,
-                  let lineVertexSource, let lineElement else { return }
+            guard let mesh, let lines, let style = currentStyle else { return }
             if shownHeat == wantedHeat { return }
             shownHeat = wantedHeat
 
-            let fillColors = BodyAsset.fillColors(for: mesh, heat: wantedHeat)
-            let fill = SCNGeometry(sources: [vertexSource, normalSource, Coordinator.colorSource(fillColors)],
-                                   elements: [fillElement])
-            fill.materials = [fillMaterial]
-            fillNode.geometry = fill
+            // Muscle outlines (and, outside the crystal style, fibres and skin lines).
+            if let lineVertexSource, let lineElement {
+                let lineColors = BodyAsset.lineColors(for: lines, heat: wantedHeat)
+                let lineGeometry = SCNGeometry(sources: [lineVertexSource, Coordinator.colorSource(lineColors)],
+                                               elements: [lineElement])
+                lineGeometry.materials = [lineMaterial]
+                lineNode.geometry = lineGeometry
+            }
 
-            let lineColors = BodyAsset.lineColors(for: lines, heat: wantedHeat)
-            let lineGeometry = SCNGeometry(sources: [lineVertexSource, Coordinator.colorSource(lineColors)],
-                                           elements: [lineElement])
-            lineGeometry.materials = [lineMaterial]
-            lineNode.geometry = lineGeometry
+            if style == .crystal {
+                guard let crystal, !crystalFillSources.isEmpty,
+                      let crystalFillElement, let crystalEdgeSource, let crystalEdgeElement,
+                      let crystalDotSource, let crystalDotElement else { return }
+
+                let fillColors = BodyAsset.crystalFillColors(for: crystal, mesh: mesh, heat: wantedHeat)
+                let fill = SCNGeometry(sources: crystalFillSources + [Coordinator.colorSource(fillColors)],
+                                       elements: [crystalFillElement])
+                fill.materials = [crystalFillMaterial]
+                crystalFillNode.geometry = fill
+
+                let edgeColors = BodyAsset.crystalLineColors(vertices: crystal.edgeVertices, mesh: mesh, heat: wantedHeat, edge: true)
+                let edges = SCNGeometry(sources: [crystalEdgeSource, Coordinator.colorSource(edgeColors)],
+                                        elements: [crystalEdgeElement])
+                edges.materials = [crystalEdgeMaterial]
+                crystalEdgeNode.geometry = edges
+
+                let dotColors = BodyAsset.crystalLineColors(vertices: crystal.dotVertices, mesh: mesh, heat: wantedHeat, edge: false)
+                let dots = SCNGeometry(sources: [crystalDotSource, Coordinator.colorSource(dotColors)],
+                                       elements: [crystalDotElement])
+                dots.materials = [crystalDotMaterial]
+                crystalDotNode.geometry = dots
+            } else {
+                guard let vertexSource, let normalSource, let fillElement else { return }
+                let fillColors = BodyAsset.fillColors(for: mesh, heat: wantedHeat)
+                let fill = SCNGeometry(sources: [vertexSource, normalSource, Coordinator.colorSource(fillColors)],
+                                       elements: [fillElement])
+                fill.materials = [fillMaterial]
+                fillNode.geometry = fill
+            }
         }
 
         func flip(ifTokenChanged token: Int) {
@@ -187,8 +252,10 @@ struct BodyModelView: UIViewRepresentable {
         /// Tapping the body names the muscle under the finger; tapping elsewhere clears it.
         @objc func handleTap(_ gesture: UITapGestureRecognizer) {
             guard let view = gesture.view as? SCNView, let mesh else { return }
+            // In the crystal style the facets are the visible body, in the others the solid mesh.
+            let pickable: SCNNode = currentStyle == .crystal ? crystalFillNode : fillNode
             let hits = view.hitTest(gesture.location(in: view), options: nil)
-            guard let hit = hits.first(where: { $0.node === fillNode }) else {
+            guard let hit = hits.first(where: { $0.node === pickable }) else {
                 onSelect(nil)
                 return
             }
@@ -223,7 +290,7 @@ struct BodyModelView: UIViewRepresentable {
                 return
             }
 
-            let camera = Vec(0, 3.5, 16)
+            let camera = cameraNode.presentation.simdWorldPosition
             let node = figure.presentation
             var best: [MuscleGroup: (point: CGPoint, facing: Float)] = [:]
 
@@ -256,23 +323,22 @@ struct BodyModelView: UIViewRepresentable {
         private func buildScene() {
             scene.background.contents = Hologram.background
             scene.rootNode.addChildNode(figure)
-            figure.addChildNode(fillNode)
-            figure.addChildNode(lineNode)
-            figure.addChildNode(haloNode)
+            for node in [fillNode, lineNode, haloNode, crystalFillNode, crystalEdgeNode, crystalDotNode] {
+                figure.addChildNode(node)
+            }
+            crystalFillNode.renderingOrder = 20
+            crystalEdgeNode.renderingOrder = 21
+            crystalDotNode.renderingOrder = 22
+            lineNode.renderingOrder = 23
+            haloNode.renderingOrder = 10
+            haloNode.geometry = nil
 
-            let camera = SCNNode()
-            camera.camera = SCNCamera()
-            camera.camera?.fieldOfView = 30
-            // HDR + bloom is what makes the thin lines glow.
-            camera.camera?.wantsHDR = true
-            camera.camera?.wantsExposureAdaptation = false
-            camera.camera?.bloomIntensity = 1.0
-            camera.camera?.bloomThreshold = 0.4
-            camera.camera?.bloomBlurRadius = 9
-            camera.position = SCNVector3(0, 3.5, 16)
-            scene.rootNode.addChildNode(camera)
+            cameraNode.camera = SCNCamera()
+            cameraNode.camera?.wantsHDR = true            // HDR + bloom is what makes the thin lines glow
+            cameraNode.camera?.wantsExposureAdaptation = false
+            scene.rootNode.addChildNode(cameraNode)
 
-            // Soft light so the raised muscles show their form.
+            // Soft light so the raised muscles show their form (Lines and Grid styles).
             let ambient = SCNNode()
             ambient.light = SCNLight()
             ambient.light?.type = .ambient
@@ -293,12 +359,108 @@ struct BodyModelView: UIViewRepresentable {
             rim.eulerAngles = SCNVector3(-0.2, -0.8, 0)
             scene.rootNode.addChildNode(rim)
 
-            // A faint glowing disc under the feet.
+            // A faint glowing disc under the feet (Lines and Grid styles).
             let floor = SCNCylinder(radius: 1.9, height: 0.02)
             floor.materials = [Coordinator.constantMaterial(Hologram.glow, alpha: 0.18, additive: true)]
-            let floorNode = SCNNode(geometry: floor)
-            floorNode.position = SCNVector3(0, -0.02, 0)
-            scene.rootNode.addChildNode(floorNode)
+            legacyFloor.geometry = floor
+            legacyFloor.position = SCNVector3(0, -0.02, 0)
+            scene.rootNode.addChildNode(legacyFloor)
+
+            buildDecorations()
+            scene.rootNode.addChildNode(decorations)
+        }
+
+        /// Light rings, vertical beams and a glowing platform around the figure.
+        private func buildDecorations() {
+            let ringColor = Hologram.ring
+
+            // Rings from the floor up past the head. They drift gently up and down.
+            let heights: [Float] = [0.02, 1.45, 2.9, 4.4, 5.85, 7.7]
+            for (index, y) in heights.enumerated() {
+                let ring = SCNNode()
+                ring.position = SCNVector3(0, y, 0)
+
+                let core = SCNTorus(ringRadius: 3.05, pipeRadius: 0.02)
+                core.materials = [Coordinator.constantMaterial(ringColor, alpha: 0.95, additive: true)]
+                let halo = SCNTorus(ringRadius: 3.05, pipeRadius: 0.11)
+                halo.materials = [Coordinator.constantMaterial(Hologram.glow, alpha: 0.10, additive: true)]
+                let inner = SCNTorus(ringRadius: 2.82, pipeRadius: 0.009)
+                inner.materials = [Coordinator.constantMaterial(ringColor, alpha: 0.6, additive: true)]
+                for geometry in [core, halo, inner] { ring.addChildNode(SCNNode(geometry: geometry)) }
+
+                let drift = SCNAction.sequence([
+                    SCNAction.moveBy(x: 0, y: 0.09, z: 0, duration: 2.6 + Double(index) * 0.3),
+                    SCNAction.moveBy(x: 0, y: -0.09, z: 0, duration: 2.6 + Double(index) * 0.3)
+                ])
+                drift.timingMode = .easeInEaseOut
+                ring.runAction(SCNAction.repeatForever(drift))
+                decorations.addChildNode(ring)
+            }
+
+            // Vertical beams around the figure, of different heights and brightness.
+            func pseudoRandom(_ seed: Float) -> Float {
+                let value = sin(seed * 12.9898) * 43758.5453
+                return value - value.rounded(.down)
+            }
+            for i in 0..<16 {
+                let seed = Float(i)
+                let angle = seed / 16 * 2 * .pi + pseudoRandom(seed + 1) * 0.3
+                let radius: Float = 2.4 + pseudoRandom(seed + 2) * 1.1
+                let height: Float = 8 + pseudoRandom(seed + 3) * 5
+                let brightness = 0.35 + pseudoRandom(seed + 4) * 0.55
+
+                let beam = SCNCylinder(radius: 0.014 + CGFloat(pseudoRandom(seed + 5)) * 0.01, height: CGFloat(height))
+                beam.materials = [Coordinator.constantMaterial(ringColor, alpha: CGFloat(brightness), additive: true)]
+                let glow = SCNCylinder(radius: 0.07, height: CGFloat(height))
+                glow.materials = [Coordinator.constantMaterial(Hologram.glow, alpha: CGFloat(brightness) * 0.12, additive: true)]
+
+                let node = SCNNode()
+                node.position = SCNVector3(radius * cos(angle), 3.6, radius * sin(angle))
+                node.addChildNode(SCNNode(geometry: beam))
+                node.addChildNode(SCNNode(geometry: glow))
+                decorations.addChildNode(node)
+            }
+
+            // Glowing platform.
+            let platform = SCNCylinder(radius: 3.0, height: 0.02)
+            platform.materials = [Coordinator.constantMaterial(Hologram.glow, alpha: 0.22, additive: true)]
+            let platformCore = SCNCylinder(radius: 1.5, height: 0.025)
+            platformCore.materials = [Coordinator.constantMaterial(Hologram.ring, alpha: 0.32, additive: true)]
+            for geometry in [platform, platformCore] {
+                let node = SCNNode(geometry: geometry)
+                node.position = SCNVector3(0, -0.02, 0)
+                decorations.addChildNode(node)
+            }
+        }
+
+        /// Camera, backdrop and decorations for a style. The crystal style looks down on the figure
+        /// from slightly above with a long lens, so the rings read as ellipses.
+        private func applySceneStyle(_ style: HologramStyle) {
+            sceneStyle = style
+            let isCrystal = style == .crystal
+            decorations.isHidden = !isCrystal
+            legacyFloor.isHidden = isCrystal
+
+            let camera = cameraNode.camera
+            if isCrystal {
+                let elevation: Float = 0.24
+                let distance: Float = 40
+                camera?.fieldOfView = 14
+                camera?.bloomIntensity = 1.4
+                camera?.bloomThreshold = 0.25
+                camera?.bloomBlurRadius = 12
+                cameraNode.position = SCNVector3(0, 3.6 + distance * sin(elevation), distance * cos(elevation))
+                cameraNode.eulerAngles = SCNVector3(-elevation, 0, 0)
+                scene.background.contents = Hologram.crystalBackdrop
+            } else {
+                camera?.fieldOfView = 30
+                camera?.bloomIntensity = 1.0
+                camera?.bloomThreshold = 0.4
+                camera?.bloomBlurRadius = 9
+                cameraNode.position = SCNVector3(0, 3.5, 16)
+                cameraNode.eulerAngles = SCNVector3(0, 0, 0)
+                scene.background.contents = Hologram.background
+            }
         }
 
         private static func litMaterial() -> SCNMaterial {
@@ -317,6 +479,13 @@ struct BodyModelView: UIViewRepresentable {
                 material.blendMode = .add
                 material.writesToDepthBuffer = false
             }
+            return material
+        }
+
+        /// Translucent, additive, visible from both sides: front and back facets add up like glass.
+        private static func glassMaterial(alpha: CGFloat) -> SCNMaterial {
+            let material = constantMaterial(.white, alpha: alpha, additive: true)
+            material.isDoubleSided = true
             return material
         }
 
@@ -351,17 +520,22 @@ struct BodyModelView: UIViewRepresentable {
                 let mesh = BodyAsset.morph(base, profile: profile)
                 let lines = BodyAsset.lines(for: mesh, style: style)
                 let anchors = BodyAsset.anchors(for: mesh)
+                let crystal = style == .crystal && !base.lowPolyTriangles.isEmpty
+                    ? BodyAsset.crystal(for: mesh, triangles: base.lowPolyTriangles)
+                    : nil
 
                 DispatchQueue.main.async {
                     guard let self, generation == self.buildGeneration else { return }
-                    self.install(mesh: mesh, lines: lines, anchors: anchors)
+                    self.install(mesh: mesh, lines: lines, anchors: anchors, crystal: crystal, style: style)
                 }
             }
         }
 
-        private func install(mesh: BodyMeshData, lines: BodyLines, anchors: [BodyAnchor]) {
+        private func install(mesh: BodyMeshData, lines: BodyLines, anchors: [BodyAnchor],
+                             crystal: BodyAsset.CrystalMesh?, style: HologramStyle) {
             self.mesh = mesh
             self.lines = lines
+            self.crystal = crystal
 
             labelLock.lock()
             self.anchors = anchors
@@ -378,17 +552,44 @@ struct BodyModelView: UIViewRepresentable {
             lineElement = SCNGeometryElement(indices: (0..<lines.positions.count).map { Int32($0) },
                                              primitiveType: .line)
 
+            let isCrystal = style == .crystal && crystal != nil
+            fillNode.isHidden = isCrystal
+            crystalFillNode.isHidden = !isCrystal
+            crystalEdgeNode.isHidden = !isCrystal
+            crystalDotNode.isHidden = !isCrystal
+            // Muscle outlines stay on in the crystal style, but softer so the facets lead.
+            lineMaterial.transparency = isCrystal ? 0.6 : 1
+            if isCrystal { lineMaterial.blendMode = .add } else { lineMaterial.blendMode = .alpha }
+
+            if let crystal, isCrystal {
+                crystalFillSources = [
+                    SCNGeometrySource(vertices: Coordinator.scnVectors(crystal.positions)),
+                    SCNGeometrySource(normals: Coordinator.scnVectors(crystal.normals))
+                ]
+                crystalFillElement = SCNGeometryElement(indices: (0..<crystal.positions.count).map { Int32($0) },
+                                                        primitiveType: .triangles)
+                crystalEdgeSource = SCNGeometrySource(vertices: Coordinator.scnVectors(crystal.edgePositions))
+                crystalEdgeElement = SCNGeometryElement(indices: (0..<crystal.edgePositions.count).map { Int32($0) },
+                                                        primitiveType: .line)
+                crystalDotSource = SCNGeometrySource(vertices: Coordinator.scnVectors(crystal.dotPositions))
+                let dots = SCNGeometryElement(indices: (0..<crystal.dotPositions.count).map { Int32($0) },
+                                              primitiveType: .point)
+                dots.pointSize = 0.05
+                dots.minimumPointScreenSpaceRadius = 1.2
+                dots.maximumPointScreenSpaceRadius = 3
+                crystalDotElement = dots
+            }
+
             // Soft rim glow: a slightly inflated copy, drawn only where its far side peeks out.
             let inflated = zip(mesh.positions, mesh.normals).map { $0 + $1 * 0.07 }
             let halo = SCNGeometry(
                 sources: [SCNGeometrySource(vertices: Coordinator.scnVectors(inflated)), normals],
                 elements: [element]
             )
-            let haloMaterial = Coordinator.constantMaterial(Hologram.glow, alpha: 0.14, additive: true)
             haloMaterial.cullMode = .front
+            haloMaterial.transparency = isCrystal ? 0.07 : 0.14
             halo.materials = [haloMaterial]
             haloNode.geometry = halo
-            haloNode.renderingOrder = 10
 
             shownHeat = nil
             applyHeat()
@@ -405,7 +606,7 @@ struct HeatBodyCard: View {
     @AppStorage(StorageKey.bodyAge) private var age = 28
     @AppStorage(StorageKey.bodyWeightKg) private var weightKg = 70.0
     @AppStorage(StorageKey.bodyHeightCm) private var heightCm = 172.0
-    @AppStorage(StorageKey.hologramStyle) private var styleRaw = HologramStyle.lines.rawValue
+    @AppStorage(StorageKey.hologramStyle) private var styleRaw = HologramStyle.crystal.rawValue
 
     @State private var flipToken = 0
     @State private var showingProfile = false
@@ -428,7 +629,7 @@ struct HeatBodyCard: View {
                 BodyModelView(
                     heat: heat,
                     profile: profile,
-                    style: HologramStyle(rawValue: styleRaw) ?? .lines,
+                    style: HologramStyle(rawValue: styleRaw) ?? .crystal,
                     flipToken: flipToken,
                     selected: selected,
                     onSelect: { tapped in

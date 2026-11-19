@@ -43,6 +43,7 @@
 		904B5EE00000000000000005 /* CoachService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 904B5EE00000000000000006 /* CoachService.swift */; };
 		904B5EE00000000000000007 /* CoachChatView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 904B5EE00000000000000008 /* CoachChatView.swift */; };
 		904B5EE00000000000000009 /* PlansView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 904B5EE0000000000000000A /* PlansView.swift */; };
+		904B5EF00000000000000001 /* body_lowpoly.bin in Resources */ = {isa = PBXBuildFile; fileRef = 904B5EF00000000000000002 /* body_lowpoly.bin */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -102,6 +103,7 @@
 		904B5EE00000000000000006 /* CoachService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CoachService.swift; sourceTree = "<group>"; };
 		904B5EE00000000000000008 /* CoachChatView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CoachChatView.swift; sourceTree = "<group>"; };
 		904B5EE0000000000000000A /* PlansView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlansView.swift; sourceTree = "<group>"; };
+		904B5EF00000000000000002 /* body_lowpoly.bin */ = {isa = PBXFileReference; lastKnownFileType = file; path = body_lowpoly.bin; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -160,6 +162,7 @@
 				904B5E822FABB414008E659A /* WorkoutHomeView.swift */,
 				904B5E862FABB476008E659A /* AddWorkoutView.swift */,
 				904B5E882FABC04E008E659A /* RegisterView.swift */,
+				904B5EF00000000000000002 /* body_lowpoly.bin */,
 				904B5EE00000000000000002 /* CoachModels.swift */,
 				904B5EE00000000000000004 /* PlanStore.swift */,
 				904B5EE00000000000000006 /* CoachService.swift */,
@@ -320,6 +323,7 @@
 			files = (
 				904B5E502FAB00FB008E659A /* Preview Assets.xcassets in Resources */,
 				904B5E4D2FAB00FB008E659A /* Assets.xcassets in Resources */,
+				904B5EF00000000000000001 /* body_lowpoly.bin in Resources */,
 				904B5EC00000000000000005 /* body_base.bin in Resources */,
 				904B5EC00000000000000007 /* body_targets.bin in Resources */,
 				904B5EB00000000000000007 /* body_faces.bin in Resources */,

@@ -17,7 +17,7 @@ struct BodyProfileView: View {
     @AppStorage(StorageKey.bodyHeightCm) private var heightCm = 172.0
     @AppStorage(StorageKey.weightUnit) private var unitRaw = WeightUnit.kg.rawValue
     @AppStorage(StorageKey.heightUnit) private var heightUnitRaw = HeightUnit.cm.rawValue
-    @AppStorage(StorageKey.hologramStyle) private var styleRaw = HologramStyle.lines.rawValue
+    @AppStorage(StorageKey.hologramStyle) private var styleRaw = HologramStyle.crystal.rawValue
 
     @State private var weightText = ""
     @State private var editingLift: BigLift?
@@ -34,7 +34,7 @@ struct BodyProfileView: View {
         Form {
             Section {
                 BodyModelView(heat: [:], profile: profile,
-                              style: HologramStyle(rawValue: styleRaw) ?? .lines)
+                              style: HologramStyle(rawValue: styleRaw) ?? .crystal)
                     .frame(height: 300)
                     .listRowInsets(EdgeInsets())
                     .listRowBackground(Color(Hologram.background))
@@ -98,7 +98,7 @@ struct BodyProfileView: View {
             } header: {
                 Text("Hologram")
             } footer: {
-                Text("Lines draws scan-lines across the body. Grid adds a crossing set of lines.")
+                Text("Crystal is a faceted glass body inside light rings. Lines draws scan-lines across the body. Grid adds a crossing set of lines.")
             }
 
             recordsSection

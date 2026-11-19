@@ -68,6 +68,9 @@ struct BodyBase {
     /// `neighbours[neighbourStart[v]..<neighbourStart[v + 1]]`. Used to smooth the surface.
     let neighbourStart: [Int32]
     let neighbours: [UInt16]
+    /// A coarse triangulation (about 2,500 triangles) that reuses a subset of the body's vertices,
+    /// so it follows every body shape. Drives the faceted "crystal" look.
+    let lowPolyTriangles: [UInt16]
     /// Shape deltas in the order of `BodyAsset.targetOrder`.
     let targets: [[SIMD3<Float>]]
 }
@@ -148,6 +151,16 @@ enum BodyAsset {
         guard triangles.allSatisfy({ Int($0) < vertexCount }) else { return nil }
 
         let adjacency = buildAdjacency(vertexCount: vertexCount, triangles: triangles)
+
+        var lowPoly: [UInt16] = []
+        if let lowURL = bundle.url(forResource: "body_lowpoly", withExtension: "bin"),
+           let low = try? Data(contentsOf: lowURL), low.count >= 4 {
+            let count = Int(readUInt32(low, at: 0))
+            if low.count >= 4 + count * 6 {
+                let candidate: [UInt16] = copyArray(low, from: 4, count: count * 3)
+                if candidate.allSatisfy({ Int($0) < vertexCount }) { lowPoly = candidate }
+            }
+        }
         let loaded = BodyBase(positions: positions,
                               headMask: mask.map { Float($0) / 255 },
                               headCore: core.map { Int($0) },
@@ -160,6 +173,7 @@ enum BodyAsset {
                               },
                               neighbourStart: adjacency.start,
                               neighbours: adjacency.list,
+                              lowPolyTriangles: lowPoly,
                               targets: deltas)
         cachedBase = loaded
         return loaded
@@ -470,8 +484,10 @@ enum BodyAsset {
         }
 
         // Horizontal scan-lines (plus vertical ones in grid style), only where no muscle is drawn on top.
+        // The crystal style draws its own facets, so it keeps only the muscle outlines.
         var skinPlanes: [(normal: Vec, step: Float)] = [(Vec(0, 1, 0), 0.06)]
         if style == .grid { skinPlanes.append((Vec(1, 0, 0), 0.12)) }
+        if style == .crystal { skinPlanes = [] }
         for plane in skinPlanes {
             for pair in slice(mesh, normal: plane.normal, step: plane.step, offset: 0.0137, triangle: { _, _, _ in true }) {
                 if max(value(mesh.maxWeight, pair.0), value(mesh.maxWeight, pair.1)) < 0.45 {
@@ -484,7 +500,7 @@ enum BodyAsset {
             let field = (0..<mesh.vertexCount).map { mesh.weight(vertex: $0, column: column) }
             let family = fibreFamily(muscle)
 
-            for side in (family.mirrored ? [Float(1), -1] : [Float(1)]) {
+            for side in (style == .crystal ? [] : (family.mirrored ? [Float(1), -1] : [Float(1)])) {
                 // Fibres, and in grid style a second set across them.
                 var cuts: [(normal: Vec, step: Float)] = [(Vec(family.nx * side, family.ny, 0), family.step)]
                 if style == .grid {
@@ -531,6 +547,130 @@ enum BodyAsset {
             }
         }
         return result
+    }
+
+    // MARK: Crystal (faceted) body
+
+    /// The faceted body: every triangle gets its own three corners so it shades flat, like cut glass.
+    struct CrystalMesh {
+        var positions: [Vec] = []       // 3 per triangle
+        var normals: [Vec] = []
+        var corners: [Int32] = []       // source vertex of each corner
+        var edgePositions: [Vec] = []   // 2 per unique edge
+        var edgeVertices: [Int32] = []
+        var dotPositions: [Vec] = []
+        var dotVertices: [Int32] = []
+
+        var triangleCount: Int { positions.count / 3 }
+    }
+
+    static func crystal(for mesh: BodyMeshData, triangles: [UInt16]) -> CrystalMesh {
+        var result = CrystalMesh()
+        var edges = Set<UInt64>()
+        var vertices = Set<Int>()
+
+        var i = 0
+        while i + 2 < triangles.count {
+            let a = Int(triangles[i]), b = Int(triangles[i + 1]), c = Int(triangles[i + 2])
+            i += 3
+
+            // Face normal, flipped to point the same way as the smooth body surface.
+            var normal = simd_cross(mesh.positions[b] - mesh.positions[a], mesh.positions[c] - mesh.positions[a])
+            let length = simd_length(normal)
+            if length < 1e-9 { continue }
+            normal /= length
+            if simd_dot(normal, mesh.normals[a] + mesh.normals[b] + mesh.normals[c]) < 0 { normal = -normal }
+
+            for v in [a, b, c] {
+                result.positions.append(mesh.positions[v])
+                result.normals.append(normal)
+                result.corners.append(Int32(v))
+                vertices.insert(v)
+            }
+            for (p, q) in [(a, b), (b, c), (c, a)] {
+                let key = UInt64(min(p, q)) << 32 | UInt64(max(p, q))
+                if edges.insert(key).inserted {
+                    result.edgePositions.append(mesh.positions[p])
+                    result.edgePositions.append(mesh.positions[q])
+                    result.edgeVertices.append(Int32(p))
+                    result.edgeVertices.append(Int32(q))
+                }
+            }
+        }
+
+        // Glowing nodes at the facet corners, plus a sprinkle of extra points across the surface.
+        for v in vertices.sorted() {
+            result.dotPositions.append(mesh.positions[v])
+            result.dotVertices.append(Int32(v))
+        }
+        for v in stride(from: 7, to: mesh.vertexCount, by: 17) {
+            result.dotPositions.append(mesh.positions[v])
+            result.dotVertices.append(Int32(v))
+        }
+        return result
+    }
+
+    static let crystalBase = SIMD3<Float>(0.30, 0.58, 0.98)
+    static let crystalEdge = SIMD3<Float>(0.60, 0.86, 1.0)
+    static let crystalNode = SIMD3<Float>(0.78, 0.93, 1.0)
+
+    /// How strongly each vertex belongs to worked muscles: the tinted color, and 0 when not worked.
+    private static func heatTint(for mesh: BodyMeshData, heat: [MuscleGroup: Double]) -> [(color: SIMD3<Float>, amount: Float)] {
+        let active = activeMuscles(heat)
+        var tints = [(color: SIMD3<Float>, amount: Float)](repeating: (.zero, 0), count: mesh.vertexCount)
+        if active.isEmpty { return tints }
+        for v in 0..<mesh.vertexCount {
+            var color = SIMD3<Float>.zero
+            var amount: Float = 0
+            for (column, rgb) in active {
+                let w = smoothstep(mesh.weight(vertex: v, column: column), 0.15, 0.6)
+                if w > amount { amount = w; color = rgb }
+            }
+            tints[v] = (color, amount)
+        }
+        return tints
+    }
+
+    /// Per-corner colors of the facets: a pale glassy blue that varies from facet to facet, turning
+    /// to the heat color on worked muscles.
+    static func crystalFillColors(for crystal: CrystalMesh, mesh: BodyMeshData, heat: [MuscleGroup: Double]) -> [SIMD4<Float>] {
+        let tints = heatTint(for: mesh, heat: heat)
+        let light = simd_normalize(Vec(0.3, 0.5, 0.8))
+        var colors = [SIMD4<Float>]()
+        colors.reserveCapacity(crystal.positions.count)
+
+        for t in 0..<crystal.triangleCount {
+            let base = 3 * t
+            let jitter = Float((UInt32(truncatingIfNeeded: t) &* 2654435761) % 1000) / 1000 * 0.36 - 0.18
+            let brightness = max(0.55 + 0.45 * abs(simd_dot(crystal.normals[base], light)) + jitter, 0.2)
+
+            // The facet's heat is the average of its corners, in the color of the strongest one.
+            var heatColor = SIMD3<Float>.zero
+            var strongest: Float = 0
+            var total: Float = 0
+            for k in 0..<3 {
+                let tint = tints[Int(crystal.corners[base + k])]
+                total += tint.amount
+                if tint.amount > strongest { strongest = tint.amount; heatColor = tint.color }
+            }
+            let share = min(total / 3, 1)
+
+            let rgb = (crystalBase * (1 - share) + heatColor * 1.1 * share) * brightness
+            let color = SIMD4(rgb.x, rgb.y, rgb.z, 1)
+            colors.append(color); colors.append(color); colors.append(color)
+        }
+        return colors
+    }
+
+    /// Colors for the facet edges (`edge: true`) or the glowing nodes, tinted by heat.
+    static func crystalLineColors(vertices: [Int32], mesh: BodyMeshData, heat: [MuscleGroup: Double], edge: Bool) -> [SIMD4<Float>] {
+        let tints = heatTint(for: mesh, heat: heat)
+        let base = edge ? crystalEdge : crystalNode
+        return vertices.map { v -> SIMD4<Float> in
+            let tint = tints[Int(v)]
+            let rgb = base * (1 - tint.amount) + tint.color * tint.amount
+            return SIMD4(rgb.x, rgb.y, rgb.z, 1)
+        }
     }
 
     // MARK: Heat colors
