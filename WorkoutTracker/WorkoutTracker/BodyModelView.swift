@@ -119,11 +119,14 @@ struct BodyModelView: UIViewRepresentable {
         private let fillMaterial = Coordinator.litMaterial()
         private let lineMaterial = Coordinator.constantMaterial(.white)
         private let haloMaterial = Coordinator.constantMaterial(Hologram.glow, alpha: 0.14, additive: true)
-        private let crystalFillMaterial = Coordinator.glassMaterial(alpha: 0.42)
-        private let crystalEdgeMaterial = Coordinator.glassMaterial(alpha: 0.35)
-        private let crystalDotMaterial = Coordinator.glassMaterial(alpha: 0.7)
+        /// Overall brightness of the crystal body, glow and heat colors (1.0 = full).
+        private static let crystalBrightness: CGFloat = 0.75
+
+        private let crystalFillMaterial = Coordinator.glassMaterial(alpha: 0.42 * Coordinator.crystalBrightness)
+        private let crystalEdgeMaterial = Coordinator.glassMaterial(alpha: 0.35 * Coordinator.crystalBrightness)
+        private let crystalDotMaterial = Coordinator.glassMaterial(alpha: 0.7 * Coordinator.crystalBrightness)
         private let crystalHeatMaterial: SCNMaterial = {
-            let material = Coordinator.constantMaterial(.white, alpha: 1.0)
+            let material = Coordinator.constantMaterial(.white, alpha: 1.0 * Coordinator.crystalBrightness)
             material.writesToDepthBuffer = false
             return material
         }()
@@ -400,7 +403,7 @@ struct BodyModelView: UIViewRepresentable {
                 let elevation: Float = 0.17
                 let distance: Float = 40
                 camera?.fieldOfView = 12.5
-                camera?.bloomIntensity = 0.6
+                camera?.bloomIntensity = 0.6 * Float(Coordinator.crystalBrightness)
                 camera?.bloomThreshold = 0.6
                 camera?.bloomBlurRadius = 7
                 cameraNode.position = SCNVector3(0, 3.6 + distance * sin(elevation), distance * cos(elevation))
@@ -513,7 +516,7 @@ struct BodyModelView: UIViewRepresentable {
             crystalDotNode.isHidden = !isCrystal
             crystalHeatNode.isHidden = !isCrystal
             // Muscle outlines stay on in the crystal style, but softer so the facets lead.
-            lineMaterial.transparency = isCrystal ? 0.6 : 1
+            lineMaterial.transparency = isCrystal ? 0.6 * Coordinator.crystalBrightness : 1
             if isCrystal { lineMaterial.blendMode = .add } else { lineMaterial.blendMode = .alpha }
 
             if let crystal, isCrystal {
@@ -542,7 +545,7 @@ struct BodyModelView: UIViewRepresentable {
                 elements: [element]
             )
             haloMaterial.cullMode = .front
-            haloMaterial.transparency = isCrystal ? 0.03 : 0.14
+            haloMaterial.transparency = isCrystal ? 0.03 * Coordinator.crystalBrightness : 0.14
             halo.materials = [haloMaterial]
             haloNode.geometry = halo
 
