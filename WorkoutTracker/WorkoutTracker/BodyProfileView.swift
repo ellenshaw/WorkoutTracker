@@ -98,7 +98,7 @@ struct BodyProfileView: View {
             } header: {
                 Text("Hologram")
             } footer: {
-                Text("Crystal is a faceted glass body inside light rings. Lines draws scan-lines across the body. Grid adds a crossing set of lines.")
+                Text("Crystal is a faceted glass body. Lines draws scan-lines across the body. Grid adds a crossing set of lines.")
             }
 
             recordsSection

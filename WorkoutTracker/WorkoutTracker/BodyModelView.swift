@@ -3,7 +3,7 @@
 //  WorkoutTracker
 //
 //  A holographic 3D anatomy figure. Three looks: Crystal (a faceted glass body with glowing
-//  nodes inside light rings and beams), Lines (scan-lines) and Grid. Worked muscles glow on the
+//  nodes), Lines (scan-lines) and Grid. Worked muscles glow on the
 //  blue-to-red heat scale and get a name label. Tap any muscle to identify it.
 //
 
@@ -14,7 +14,6 @@ import SceneKit
 enum Hologram {
     static let background = UIColor(red: 0.03, green: 0.05, blue: 0.10, alpha: 1)
     static let glow = UIColor(red: 0.25, green: 0.60, blue: 1.0, alpha: 1)
-    static let ring = UIColor(red: 0.35, green: 0.75, blue: 1.0, alpha: 1)
 
     /// Deep navy that brightens to blue behind the figure, like a lit chamber.
     static let crystalBackdrop: UIImage = {
@@ -108,7 +107,6 @@ struct BodyModelView: UIViewRepresentable {
 
         private let figure = SCNNode()
         private let cameraNode = SCNNode()
-        private let decorations = SCNNode()      // rings, beams and glowing floor (crystal style)
         private let legacyFloor = SCNNode()
         private let fillNode = SCNNode()
         private let lineNode = SCNNode()
@@ -366,86 +364,20 @@ struct BodyModelView: UIViewRepresentable {
             legacyFloor.position = SCNVector3(0, -0.02, 0)
             scene.rootNode.addChildNode(legacyFloor)
 
-            buildDecorations()
-            scene.rootNode.addChildNode(decorations)
         }
 
-        /// Light rings, vertical beams and a glowing platform around the figure.
-        private func buildDecorations() {
-            let ringColor = Hologram.ring
-
-            // Rings from the floor up past the head. They drift gently up and down.
-            let heights: [Float] = [0.02, 1.45, 2.9, 4.4, 5.85, 7.7]
-            for (index, y) in heights.enumerated() {
-                let ring = SCNNode()
-                ring.position = SCNVector3(0, y, 0)
-
-                let core = SCNTorus(ringRadius: 3.05, pipeRadius: 0.02)
-                core.materials = [Coordinator.constantMaterial(ringColor, alpha: 0.95, additive: true)]
-                let halo = SCNTorus(ringRadius: 3.05, pipeRadius: 0.11)
-                halo.materials = [Coordinator.constantMaterial(Hologram.glow, alpha: 0.10, additive: true)]
-                let inner = SCNTorus(ringRadius: 2.82, pipeRadius: 0.009)
-                inner.materials = [Coordinator.constantMaterial(ringColor, alpha: 0.6, additive: true)]
-                for geometry in [core, halo, inner] { ring.addChildNode(SCNNode(geometry: geometry)) }
-
-                let drift = SCNAction.sequence([
-                    SCNAction.moveBy(x: 0, y: 0.09, z: 0, duration: 2.6 + Double(index) * 0.3),
-                    SCNAction.moveBy(x: 0, y: -0.09, z: 0, duration: 2.6 + Double(index) * 0.3)
-                ])
-                drift.timingMode = .easeInEaseOut
-                ring.runAction(SCNAction.repeatForever(drift))
-                decorations.addChildNode(ring)
-            }
-
-            // Vertical beams around the figure, of different heights and brightness.
-            func pseudoRandom(_ seed: Float) -> Float {
-                let value = sin(seed * 12.9898) * 43758.5453
-                return value - value.rounded(.down)
-            }
-            for i in 0..<16 {
-                let seed = Float(i)
-                let angle = seed / 16 * 2 * .pi + pseudoRandom(seed + 1) * 0.3
-                let radius: Float = 2.4 + pseudoRandom(seed + 2) * 1.1
-                let height: Float = 8 + pseudoRandom(seed + 3) * 5
-                let brightness = 0.35 + pseudoRandom(seed + 4) * 0.55
-
-                let beam = SCNCylinder(radius: 0.014 + CGFloat(pseudoRandom(seed + 5)) * 0.01, height: CGFloat(height))
-                beam.materials = [Coordinator.constantMaterial(ringColor, alpha: CGFloat(brightness), additive: true)]
-                let glow = SCNCylinder(radius: 0.07, height: CGFloat(height))
-                glow.materials = [Coordinator.constantMaterial(Hologram.glow, alpha: CGFloat(brightness) * 0.12, additive: true)]
-
-                let node = SCNNode()
-                node.position = SCNVector3(radius * cos(angle), 3.6, radius * sin(angle))
-                node.addChildNode(SCNNode(geometry: beam))
-                node.addChildNode(SCNNode(geometry: glow))
-                decorations.addChildNode(node)
-            }
-
-            // Glowing platform.
-            let platform = SCNCylinder(radius: 3.0, height: 0.02)
-            platform.materials = [Coordinator.constantMaterial(Hologram.glow, alpha: 0.22, additive: true)]
-            let platformCore = SCNCylinder(radius: 1.5, height: 0.025)
-            platformCore.materials = [Coordinator.constantMaterial(Hologram.ring, alpha: 0.32, additive: true)]
-            for geometry in [platform, platformCore] {
-                let node = SCNNode(geometry: geometry)
-                node.position = SCNVector3(0, -0.02, 0)
-                decorations.addChildNode(node)
-            }
-        }
-
-        /// Camera, backdrop and decorations for a style. The crystal style looks down on the figure
-        /// from slightly above with a long lens, so the rings read as ellipses.
+        /// Camera and backdrop for a style. The crystal style looks at the figure from slightly above
+        /// with a long lens, against a deep-blue glow.
         private func applySceneStyle(_ style: HologramStyle) {
             sceneStyle = style
             let isCrystal = style == .crystal
-            decorations.isHidden = !isCrystal
             legacyFloor.isHidden = isCrystal
 
             let camera = cameraNode.camera
             if isCrystal {
-                let elevation: Float = 0.24
+                let elevation: Float = 0.17
                 let distance: Float = 40
-                camera?.fieldOfView = 14
+                camera?.fieldOfView = 12.5
                 camera?.bloomIntensity = 1.4
                 camera?.bloomThreshold = 0.25
                 camera?.bloomBlurRadius = 12
