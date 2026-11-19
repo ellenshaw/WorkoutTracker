@@ -48,9 +48,8 @@ Any host that runs a Docker image or Node works (Render, Fly.io, Railway, Google
 1. Create a new web service from this `backend/` folder (it has a `Dockerfile`).
 2. Set the environment variables from `.env.example`. `ANTHROPIC_API_KEY` and `APP_KEY` are the important ones.
 3. Deploy. You get an HTTPS URL such as `https://your-coach.onrender.com`.
-4. In the app: Settings → AI coach → paste the server URL and the same `APP_KEY`.
-
-For a published app, put the URL and key in the app's Info.plist (`CoachBaseURL`, `CoachAppKey`) so users don't type them.
+4. Put the URL and key in the app's Info.plist as `CoachBaseURL` and `CoachAppKey` (Xcode: target → Info → add two String rows). Users never see or type anything: the app is just connected.
+5. While developing, debug builds also show two fields in Settings → AI coach to point at a test server. Release builds never show them.
 
 ## Before you publish
 

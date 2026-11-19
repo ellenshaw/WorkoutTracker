@@ -11,10 +11,14 @@ import Foundation
 // MARK: - Configuration
 
 enum CoachConfig {
-    /// A server URL typed into Settings wins; otherwise `CoachBaseURL` from Info.plist (for release builds).
+    /// Release builds use the app's own coach server, set once in Info.plist (`CoachBaseURL`), so
+    /// users never see or enter anything. Debug builds can override it from Settings for testing.
     static var baseURL: URL? {
+        var configured = Bundle.main.object(forInfoDictionaryKey: "CoachBaseURL") as? String
+        #if DEBUG
         let typed = UserDefaults.standard.string(forKey: StorageKey.coachBaseURL)?.trimmingCharacters(in: .whitespacesAndNewlines)
-        let configured = (typed?.isEmpty == false ? typed : nil) ?? Bundle.main.object(forInfoDictionaryKey: "CoachBaseURL") as? String
+        if let typed, !typed.isEmpty { configured = typed }
+        #endif
         guard let configured, !configured.isEmpty, let url = URL(string: configured), url.scheme?.hasPrefix("http") == true else {
             return nil
         }
@@ -22,8 +26,11 @@ enum CoachConfig {
     }
 
     static var appKey: String? {
+        var key = Bundle.main.object(forInfoDictionaryKey: "CoachAppKey") as? String
+        #if DEBUG
         let typed = UserDefaults.standard.string(forKey: StorageKey.coachAppKey)?.trimmingCharacters(in: .whitespacesAndNewlines)
-        let key = (typed?.isEmpty == false ? typed : nil) ?? Bundle.main.object(forInfoDictionaryKey: "CoachAppKey") as? String
+        if let typed, !typed.isEmpty { key = typed }
+        #endif
         return (key?.isEmpty == false) ? key : nil
     }
 
@@ -59,7 +66,11 @@ enum CoachError: LocalizedError, Equatable {
     var errorDescription: String? {
         switch self {
         case .notConfigured:
-            return "The coach isn't connected to a server yet. Add the server address in Settings → AI coach."
+            #if DEBUG
+            return "The coach isn't connected to a server yet. For a debug build, add the server address in Settings → AI coach."
+            #else
+            return "The coach isn't available right now. Please try again later."
+            #endif
         case .offline:
             return "Couldn't reach the coach. Check your connection and try again."
         case .limited(let message), .server(let message):

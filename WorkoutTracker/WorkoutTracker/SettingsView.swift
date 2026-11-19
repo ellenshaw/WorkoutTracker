@@ -24,11 +24,6 @@ struct SettingsView: View {
 
     @State private var confirmingDelete = false
 
-    /// Release builds carry the server address in Info.plist; only development builds show the fields.
-    private var coachIsPreconfigured: Bool {
-        Bundle.main.object(forInfoDictionaryKey: "CoachBaseURL") != nil
-    }
-
     private var version: String {
         let short = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0"
         let build = Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "1"
@@ -87,21 +82,20 @@ struct SettingsView: View {
                 Section {
                     Toggle("Share training info with coach", isOn: $coachShare)
 
-                    if !coachIsPreconfigured {
-                        TextField("Server address", text: $coachURL)
-                            .keyboardType(.URL)
-                            .textInputAutocapitalization(.never)
-                            .autocorrectionDisabled()
-                        SecureField("App key", text: $coachKey)
-                    }
+                    #if DEBUG
+                    // Developer-only: point a debug build at your own coach server. Never shown in release builds.
+                    TextField("Server address (debug)", text: $coachURL)
+                        .keyboardType(.URL)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                    SecureField("App key (debug)", text: $coachKey)
+                    #endif
 
                     Button("Clear coach conversation") { coach.clear() }
                 } header: {
                     Text("AI coach")
                 } footer: {
-                    Text(coachIsPreconfigured
-                         ? "When on, the coach sees your age, weight, height, records and recent workouts so plans fit you. Messages are processed by an AI service."
-                         : "Development build: enter the address of your coach server (see backend/README.md). The AI key lives on the server, never in the app.")
+                    Text("When on, the coach sees your age, weight, height, records and recent workouts so plans fit you. Messages are processed by an AI service.")
                 }
 
                 Section("Account") {
