@@ -14,6 +14,7 @@ struct WorkoutResultView: View {
 
     @EnvironmentObject private var store: WorkoutStore
     @AppStorage(StorageKey.weightUnit) private var unitRaw = WeightUnit.kg.rawValue
+    @AppStorage(StorageKey.distanceUnit) private var distanceUnitRaw = DistanceUnit.km.rawValue
 
     private var unit: WeightUnit { WeightUnit(rawValue: unitRaw) ?? .kg }
 
@@ -35,6 +36,10 @@ struct WorkoutResultView: View {
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .cardStyle()
+
+                if (workout.distanceKm ?? 0) > 0 {
+                    cardioCard
+                }
 
                 if !workout.exercises.isEmpty {
                     exercisesCard
@@ -73,6 +78,64 @@ struct WorkoutResultView: View {
                 }
             }
         }
+    }
+
+    private var distanceUnit: DistanceUnit { DistanceUnit(rawValue: distanceUnitRaw) ?? .km }
+
+    private var cardioCard: some View {
+        let km = workout.distanceKm ?? 0
+        let style = ActivityMetrics.paceStyle(for: workout.activityName)
+        let distanceText = ActivityMetrics.usesShortDistance(workout.activityName)
+            ? "\(Int(distanceUnit.fromKmShort(km).rounded())) \(distanceUnit.shortSymbol)"
+            : "\(distanceUnit.format(km: km)) \(distanceUnit.symbol)"
+        let pace = workout.paceSecondsPerKm.map { PaceFormat.format(secondsPerKm: $0, style: style, unit: distanceUnit) } ?? "–"
+        let badges = CardioRecords.badges(for: workout, among: store.workouts)
+
+        return VStack(alignment: .leading, spacing: 14) {
+            HStack {
+                cardioStat(distanceText, "Distance")
+                Divider().frame(height: 34)
+                cardioStat(PaceFormat.clock(Double(workout.elapsedSeconds)), "Time")
+                Divider().frame(height: 34)
+                cardioStat(pace, style == .speed ? "Speed" : "Pace")
+            }
+
+            if !badges.isEmpty {
+                HStack(spacing: 8) {
+                    ForEach(badges, id: \.rawValue) { kind in
+                        Label(kind.title, systemImage: "trophy.fill")
+                            .font(.caption.weight(.bold))
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 4)
+                            .background(Color.yellow.opacity(0.25))
+                            .foregroundStyle(Color.yellow)
+                            .clipShape(Capsule())
+                    }
+                }
+            }
+
+            if !workout.route.isEmpty {
+                RouteMapView(route: workout.route)
+                    .frame(height: 220)
+                    .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .cardStyle()
+    }
+
+    private func cardioStat(_ value: String, _ title: String) -> some View {
+        VStack(spacing: 2) {
+            Text(value)
+                .font(.headline)
+                .monospacedDigit()
+                .minimumScaleFactor(0.6)
+                .lineLimit(1)
+            Text(title)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity)
     }
 
     private var exercisesCard: some View {

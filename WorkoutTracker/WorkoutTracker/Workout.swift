@@ -41,9 +41,17 @@ struct Workout: Identifiable, Codable, Hashable {
     /// Session type ("Game", "Tempo", "Practice"...) and position or style ("Cutter", "Handler"...).
     var mode = ""
     var role = ""
+    /// The activity tile it was logged under ("Running", "Rowing"...), whatever the workout is named.
+    var activity = ""
     /// Cycle phase when this was logged, only if the user tracks their cycle ("menstrual", ...).
     /// Lets progress charts explain a dip. Stays on the device.
     var cyclePhase = ""
+    /// Cardio: distance in kilometres (always stored as km, shown in the user's unit).
+    var distanceKm: Double?
+    /// Exact time in seconds when known (GPS or entered with seconds); `duration` is the rounded minutes.
+    var durationSeconds: Int?
+    /// GPS route for outdoor sessions, thinned to a few hundred points. Stays on this device.
+    var route: [RoutePoint] = []
 
     init(id: UUID = UUID(),
          name: String,
@@ -56,7 +64,11 @@ struct Workout: Identifiable, Codable, Hashable {
          isPinned: Bool = false,
          mode: String = "",
          role: String = "",
-         cyclePhase: String = "") {
+         activity: String = "",
+         cyclePhase: String = "",
+         distanceKm: Double? = nil,
+         durationSeconds: Int? = nil,
+         route: [RoutePoint] = []) {
         self.id = id
         self.name = name
         self.category = category
@@ -68,11 +80,15 @@ struct Workout: Identifiable, Codable, Hashable {
         self.isPinned = isPinned
         self.mode = mode
         self.role = role
+        self.activity = activity
         self.cyclePhase = cyclePhase
+        self.distanceKm = distanceKm
+        self.durationSeconds = durationSeconds
+        self.route = route
     }
 
     private enum CodingKeys: String, CodingKey {
-        case id, name, category, duration, notes, date, muscleIntensity, exercises, isPinned, mode, role, cyclePhase
+        case id, name, category, duration, notes, date, muscleIntensity, exercises, isPinned, mode, role, activity, cyclePhase, distanceKm, durationSeconds, route
         /// Written by older versions as steps 1–3 instead of percentages.
         case muscleLevels
     }
@@ -90,7 +106,11 @@ struct Workout: Identifiable, Codable, Hashable {
         isPinned = try c.decodeIfPresent(Bool.self, forKey: .isPinned) ?? false
         mode = try c.decodeIfPresent(String.self, forKey: .mode) ?? ""
         role = try c.decodeIfPresent(String.self, forKey: .role) ?? ""
+        activity = try c.decodeIfPresent(String.self, forKey: .activity) ?? ""
         cyclePhase = try c.decodeIfPresent(String.self, forKey: .cyclePhase) ?? ""
+        distanceKm = try c.decodeIfPresent(Double.self, forKey: .distanceKm)
+        durationSeconds = try c.decodeIfPresent(Int.self, forKey: .durationSeconds)
+        route = try c.decodeIfPresent([RoutePoint].self, forKey: .route) ?? []
 
         if let percent = try c.decodeIfPresent([String: Int].self, forKey: .muscleIntensity) {
             muscleIntensity = percent
@@ -116,7 +136,11 @@ struct Workout: Identifiable, Codable, Hashable {
         try c.encode(isPinned, forKey: .isPinned)
         try c.encode(mode, forKey: .mode)
         try c.encode(role, forKey: .role)
+        try c.encode(activity, forKey: .activity)
         try c.encode(cyclePhase, forKey: .cyclePhase)
+        try c.encodeIfPresent(distanceKm, forKey: .distanceKm)
+        try c.encodeIfPresent(durationSeconds, forKey: .durationSeconds)
+        if !route.isEmpty { try c.encode(route, forKey: .route) }
     }
 
     /// How hard each muscle was worked, 0 (not at all) to 1 (maximum).
@@ -147,6 +171,9 @@ struct Workout: Identifiable, Codable, Hashable {
         exercises.reduce(0) { $0 + $1.volumeKg }
     }
 
+    /// The activity this belongs to, for grouping records: the tile it was logged under, else its name.
+    var activityName: String { activity.isEmpty ? name : activity }
+
     /// "Game · Cutter": the session type and position, when there are any.
     var variantText: String {
         [mode, role].filter { !$0.isEmpty }.joined(separator: " · ")
@@ -155,7 +182,16 @@ struct Workout: Identifiable, Codable, Hashable {
     /// One-line description for lists and pinned cards.
     var summary: String {
         if exercises.isEmpty {
-            return variantText.isEmpty ? "\(duration) min" : "\(duration) min · \(variantText)"
+            var parts: [String] = []
+            if let distanceKm, distanceKm > 0 {
+                let unit = DistanceUnit(rawValue: UserDefaults.standard.string(forKey: StorageKey.distanceUnit) ?? "") ?? .km
+                parts.append(ActivityMetrics.usesShortDistance(activityName)
+                             ? "\(Int(unit.fromKmShort(distanceKm).rounded())) \(unit.shortSymbol)"
+                             : "\(unit.format(km: distanceKm)) \(unit.symbol)")
+            }
+            parts.append("\(duration) min")
+            if !variantText.isEmpty { parts.append(variantText) }
+            return parts.joined(separator: " · ")
         }
         let count = exercises.count
         return "\(count) exercise\(count == 1 ? "" : "s") · \(totalSets) sets"

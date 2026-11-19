@@ -10,6 +10,7 @@ enum StorageKey {
     static let userName = "userName"
     static let appearance = "appearance"
     static let weightUnit = "weightUnit"
+    static let distanceUnit = "distanceUnit"
     static let bodyGender = "bodyGender"
     static let bodyAge = "bodyAge"
     static let bodyWeightKg = "bodyWeightKg"

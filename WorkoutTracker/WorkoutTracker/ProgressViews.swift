@@ -79,12 +79,84 @@ extension WorkoutStore {
         .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
     }
 
+    /// Distance workouts for one activity, oldest first.
+    func cardioHistory(for activity: String) -> [Workout] {
+        workouts.reversed().filter { $0.activityName == activity && ($0.distanceKm ?? 0) > 0 }
+    }
+
+    /// Activities that have distance logged, with how many workouts.
+    func cardioActivities() -> [(name: String, workouts: Int)] {
+        var counts: [String: Int] = [:]
+        for workout in workouts where ActivityMetrics.tracksDistance(workout.activityName) && (workout.distanceKm ?? 0) > 0 {
+            counts[workout.activityName, default: 0] += 1
+        }
+        return counts.map { (name: $0.key, workouts: $0.value) }.sorted { $0.name < $1.name }
+    }
+
     /// Total volume of each strength workout, oldest first.
     func workoutVolumes() -> [WorkoutVolumePoint] {
         workouts.reversed().compactMap { workout in
             guard !workout.exercises.isEmpty else { return nil }
             return WorkoutVolumePoint(id: workout.id, date: workout.date, name: workout.name,
                                       volumeKg: workout.totalVolumeKg, cyclePhase: workout.cyclePhase)
+        }
+    }
+}
+
+// MARK: - Compact trend for the logging screen
+
+/// A small estimated-1RM trend shown inside each exercise while you log, so you can see where you
+/// are heading. Tap it for the full chart.
+struct ExerciseSparkline: View {
+    let exerciseID: String
+    let onOpen: () -> Void
+
+    @EnvironmentObject private var store: WorkoutStore
+    @AppStorage(StorageKey.weightUnit) private var unitRaw = WeightUnit.kg.rawValue
+
+    private var unit: WeightUnit { WeightUnit(rawValue: unitRaw) ?? .kg }
+
+    var body: some View {
+        let points = Array(store.history(for: exerciseID).filter { $0.oneRepMaxKg > 0 }.suffix(10))
+
+        if points.count >= 2 {
+            let best = points.map(\.oneRepMaxKg).max() ?? 0
+            let latest = points.last?.oneRepMaxKg ?? 0
+
+            Button(action: onOpen) {
+                HStack(spacing: 12) {
+                    Chart(points) { point in
+                        LineMark(x: .value("Date", point.date), y: .value("1RM", point.oneRepMaxKg))
+                            .foregroundStyle(Theme.accent)
+                            .interpolationMethod(.monotone)
+                        PointMark(x: .value("Date", point.date), y: .value("1RM", point.oneRepMaxKg))
+                            .foregroundStyle(Theme.accent)
+                            .symbolSize(18)
+                    }
+                    .chartXAxis(.hidden)
+                    .chartYAxis(.hidden)
+                    .chartYScale(domain: .automatic(includesZero: false))
+                    .frame(width: 110, height: 40)
+
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text("Est. 1RM trend")
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                        Text("Best \(unit.format(kg: best)) · Last \(unit.format(kg: latest)) \(unit.symbol)")
+                            .font(.caption.weight(.medium))
+                            .monospacedDigit()
+                    }
+                    Spacer()
+                    Image(systemName: "chevron.right")
+                        .font(.caption2.weight(.semibold))
+                        .foregroundStyle(.tertiary)
+                }
+                .padding(8)
+                .background(Color(.tertiarySystemFill))
+                .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Progress chart. Best estimated one-rep max \(unit.format(kg: best)) \(unit.symbol).")
         }
     }
 }
@@ -100,13 +172,32 @@ struct ProgressListView: View {
     var body: some View {
         let volumes = store.workoutVolumes()
         let exercises = store.loggedExercises()
+        let cardio = store.cardioActivities()
 
         List {
-            if volumes.isEmpty {
+            if !cardio.isEmpty {
+                Section("Cardio") {
+                    ForEach(cardio, id: \.name) { item in
+                        NavigationLink {
+                            CardioProgressView(activity: item.name)
+                        } label: {
+                            HStack {
+                                Text(item.name)
+                                Spacer()
+                                Text("\(item.workouts) workout\(item.workouts == 1 ? "" : "s")")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                    }
+                }
+            }
+
+            if volumes.isEmpty && cardio.isEmpty {
                 ContentUnavailableView("No progress yet", systemImage: "chart.line.uptrend.xyaxis",
                                        description: Text("Log a strength workout and your charts show up here."))
                     .listRowBackground(Color.clear)
-            } else {
+            } else if !volumes.isEmpty {
                 Section("Total volume per workout") {
                     VolumeChart(points: volumes, unit: unit)
                         .frame(height: 190)
@@ -312,5 +403,146 @@ struct ExerciseProgressView: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .cardStyle()
+    }
+}
+
+
+// MARK: - Cardio progress
+
+/// Pace, distance and time over your workouts for one activity, with its records.
+struct CardioProgressView: View {
+    let activity: String
+
+    @EnvironmentObject private var store: WorkoutStore
+    @AppStorage(StorageKey.distanceUnit) private var unitRaw = DistanceUnit.km.rawValue
+    @State private var metric = Metric.pace
+
+    enum Metric: String, CaseIterable, Identifiable {
+        case pace = "Pace", distance = "Distance", time = "Time"
+        var id: String { rawValue }
+    }
+
+    private var unit: DistanceUnit { DistanceUnit(rawValue: unitRaw) ?? .km }
+    private var style: PaceStyle { ActivityMetrics.paceStyle(for: activity) }
+
+    /// The chart value for a workout in the units shown to the user.
+    private func value(_ workout: Workout) -> Double? {
+        guard let km = workout.distanceKm, km > 0 else { return nil }
+        switch metric {
+        case .distance:
+            return ActivityMetrics.usesShortDistance(activity) ? unit.fromKmShort(km) : unit.fromKm(km)
+        case .time:
+            return Double(workout.elapsedSeconds) / 60
+        case .pace:
+            guard let perKm = workout.paceSecondsPerKm else { return nil }
+            switch style {
+            case .perDistance: return unit == .km ? perKm : perKm * 1.609344
+            case .per500m: return perKm / 2
+            case .per100: return unit == .km ? perKm / 10 : perKm / 1093.6133 * 100
+            case .speed: return unit.fromKm(3600 / perKm)
+            }
+        }
+    }
+
+    private var axisLabel: String {
+        switch metric {
+        case .distance: return ActivityMetrics.usesShortDistance(activity) ? unit.shortSymbol : unit.symbol
+        case .time: return "min"
+        case .pace:
+            switch style {
+            case .perDistance: return "min/\(unit.symbol)"
+            case .per500m: return "min/500m"
+            case .per100: return unit == .km ? "min/100m" : "min/100yd"
+            case .speed: return unit == .km ? "km/h" : "mph"
+            }
+        }
+    }
+
+    var body: some View {
+        let workouts = store.cardioHistory(for: activity)
+        let points = workouts.compactMap { workout in value(workout).map { (workout: workout, value: $0) } }
+        let records = CardioRecords.compute(workouts: store.workouts).filter { $0.activity == activity }
+
+        ScrollView {
+            VStack(alignment: .leading, spacing: 16) {
+                Picker("Metric", selection: $metric) {
+                    ForEach(Metric.allCases) { Text($0.rawValue).tag($0) }
+                }
+                .pickerStyle(.segmented)
+
+                if points.isEmpty {
+                    ContentUnavailableView("Nothing to chart yet", systemImage: "chart.xyaxis.line")
+                } else {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Chart(points, id: \.workout.id) { point in
+                            LineMark(x: .value("Date", point.workout.date), y: .value(metric.rawValue, point.value))
+                                .foregroundStyle(Theme.accent)
+                                .interpolationMethod(.monotone)
+                            PointMark(x: .value("Date", point.workout.date), y: .value(metric.rawValue, point.value))
+                                .foregroundStyle(point.workout.cyclePhase == CyclePhase.menstrual.rawValue ? Color.pink : Theme.accent)
+                        }
+                        .chartYScale(domain: .automatic(includesZero: false))
+                        .chartYAxisLabel(axisLabel)
+                        .frame(height: 230)
+
+                        if metric == .pace && style != .speed {
+                            Text("Lower is faster.")
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                    .cardStyle()
+                }
+
+                if !records.isEmpty {
+                    recordsCard(records)
+                }
+            }
+            .padding()
+        }
+        .background(Color(.systemGroupedBackground))
+        .navigationTitle(activity)
+        .navigationBarTitleDisplayMode(.inline)
+    }
+
+    private func recordsCard(_ records: [CardioRecord]) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Records")
+                .font(.headline)
+            ForEach(records) { record in
+                HStack {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(record.kind.title)
+                        Text(record.date.formatted(date: .abbreviated, time: .omitted) + (record.estimated ? " · from your average pace" : ""))
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    Spacer()
+                    Text(CardioRecordText.value(record, activity: activity, unit: unit))
+                        .font(.headline)
+                        .monospacedDigit()
+                }
+                .accessibilityElement(children: .combine)
+                if record.id != records.last?.id { Divider() }
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .cardStyle()
+    }
+}
+
+/// How a cardio record's value reads: "5:12 /km", "12.4 km", "1:05:30".
+enum CardioRecordText {
+    static func value(_ record: CardioRecord, activity: String, unit: DistanceUnit) -> String {
+        switch record.kind {
+        case .bestPace:
+            return PaceFormat.format(secondsPerKm: record.value, style: ActivityMetrics.paceStyle(for: activity), unit: unit)
+        case .longestDistance:
+            return ActivityMetrics.usesShortDistance(activity)
+                ? "\(Int(unit.fromKmShort(record.value).rounded())) \(unit.shortSymbol)"
+                : "\(unit.format(km: record.value)) \(unit.symbol)"
+        case .longestTime, .fastest5K, .fastest10K, .fastestHalf, .fastestMarathon:
+            return PaceFormat.clock(record.value)
+        }
     }
 }

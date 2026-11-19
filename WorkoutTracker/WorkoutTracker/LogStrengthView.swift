@@ -56,6 +56,7 @@ struct LogStrengthView: View {
     @State private var showingPicker = false
     @State private var confirmingDiscard = false
     @State private var loadedTemplate = false
+    @State private var chartExercise: Exercise?
 
     @FocusState private var keyboardFocused: Bool
 
@@ -168,6 +169,17 @@ struct LogStrengthView: View {
                 }
             }
         }
+        .sheet(item: $chartExercise) { exercise in
+            // Opens over the logger, so nothing you've typed is lost.
+            NavigationStack {
+                ExerciseProgressView(exerciseID: exercise.id, title: exercise.name)
+                    .toolbar {
+                        ToolbarItem(placement: .confirmationAction) {
+                            Button("Done") { chartExercise = nil }
+                        }
+                    }
+            }
+        }
         .onAppear(perform: loadTemplateIfNeeded)
     }
 
@@ -223,6 +235,7 @@ struct LogStrengthView: View {
                 }
                 Spacer()
                 Menu {
+                    Button("View Progress") { chartExercise = value.exercise }
                     Button("Add Set") { addSet(to: value.id) }
                     Button("Remove Last Set") { removeLastSet(from: value.id) }
                         .disabled(value.sets.count <= 1)
@@ -236,6 +249,8 @@ struct LogStrengthView: View {
                 }
                 .accessibilityLabel("Options for \(value.exercise.name)")
             }
+
+            ExerciseSparkline(exerciseID: value.exercise.id) { chartExercise = value.exercise }
 
             HStack(spacing: 8) {
                 Text("SET").frame(width: 28)

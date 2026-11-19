@@ -47,6 +47,8 @@
 		904B5F000000000000000001 /* CycleStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 904B5F000000000000000002 /* CycleStore.swift */; };
 		904B5F000000000000000003 /* CycleViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 904B5F000000000000000004 /* CycleViews.swift */; };
 		904B5F000000000000000005 /* ProgressViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 904B5F000000000000000006 /* ProgressViews.swift */; };
+		904B5F100000000000000001 /* Distance.swift in Sources */ = {isa = PBXBuildFile; fileRef = 904B5F100000000000000002 /* Distance.swift */; };
+		904B5F100000000000000003 /* OutdoorTracker.swift in Sources */ = {isa = PBXBuildFile; fileRef = 904B5F100000000000000004 /* OutdoorTracker.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -110,6 +112,8 @@
 		904B5F000000000000000002 /* CycleStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CycleStore.swift; sourceTree = "<group>"; };
 		904B5F000000000000000004 /* CycleViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CycleViews.swift; sourceTree = "<group>"; };
 		904B5F000000000000000006 /* ProgressViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProgressViews.swift; sourceTree = "<group>"; };
+		904B5F100000000000000002 /* Distance.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Distance.swift; sourceTree = "<group>"; };
+		904B5F100000000000000004 /* OutdoorTracker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OutdoorTracker.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -168,6 +172,8 @@
 				904B5E822FABB414008E659A /* WorkoutHomeView.swift */,
 				904B5E862FABB476008E659A /* AddWorkoutView.swift */,
 				904B5E882FABC04E008E659A /* RegisterView.swift */,
+				904B5F100000000000000002 /* Distance.swift */,
+				904B5F100000000000000004 /* OutdoorTracker.swift */,
 				904B5F000000000000000002 /* CycleStore.swift */,
 				904B5F000000000000000004 /* CycleViews.swift */,
 				904B5F000000000000000006 /* ProgressViews.swift */,
@@ -368,6 +374,8 @@
 				904B5E892FABC04E008E659A /* RegisterView.swift in Sources */,
 				904B5E492FAB00F9008E659A /* WorkoutTrackerApp.swift in Sources */,
 				904B5E812FABB3D8008E659A /* Workout.swift in Sources */,
+				904B5F100000000000000001 /* Distance.swift in Sources */,
+				904B5F100000000000000003 /* OutdoorTracker.swift in Sources */,
 				904B5F000000000000000001 /* CycleStore.swift in Sources */,
 				904B5F000000000000000003 /* CycleViews.swift in Sources */,
 				904B5F000000000000000005 /* ProgressViews.swift in Sources */,
@@ -557,6 +565,7 @@
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_CFBundleDisplayName = "Workout Tracker";
+				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "Workout Tracker uses your location during an outdoor session to measure distance, pace and your route. It is only used while you are tracking and stays on your device.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
@@ -586,6 +595,7 @@
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_CFBundleDisplayName = "Workout Tracker";
+				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "Workout Tracker uses your location during an outdoor session to measure distance, pace and your route. It is only used while you are tracking and stays on your device.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;

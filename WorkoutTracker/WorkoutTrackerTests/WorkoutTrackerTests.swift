@@ -1106,5 +1106,187 @@ final class WorkoutTrackerTests: XCTestCase {
             XCTAssertFalse(json.contains(word), "coach context should never mention \(word)")
         }
     }
+
+    // MARK: Cardio: pace, records, GPS
+
+    private func run(_ km: Double, _ seconds: Int, daysAgo: Int = 0, activity: String = "Running", name: String? = nil) -> Workout {
+        var w = Workout(name: name ?? activity, category: .cardio, duration: max(1, seconds / 60), notes: "",
+                        date: Calendar.current.date(byAdding: .day, value: -daysAgo, to: Date())!)
+        w.activity = activity
+        w.distanceKm = km
+        w.durationSeconds = seconds
+        return w
+    }
+
+    func testPaceFormats() {
+        XCTAssertEqual(PaceFormat.clock(312), "5:12")
+        XCTAssertEqual(PaceFormat.clock(3930), "1:05:30")
+        let fiveKmIn25 = PaceFormat.secondsPerKm(distanceKm: 5, seconds: 25 * 60)
+        XCTAssertEqual(fiveKmIn25, 300, accuracy: 0.001)
+        XCTAssertEqual(PaceFormat.format(secondsPerKm: 300, style: .perDistance, unit: .km), "5:00 /km")
+        XCTAssertEqual(PaceFormat.format(secondsPerKm: 300, style: .perDistance, unit: .mi), "8:03 /mi")
+        XCTAssertEqual(PaceFormat.format(secondsPerKm: 240, style: .per500m, unit: .km), "2:00 /500m")   // rowing
+        XCTAssertEqual(PaceFormat.format(secondsPerKm: 900, style: .per100, unit: .km), "1:30 /100m")    // swimming
+        XCTAssertEqual(PaceFormat.format(secondsPerKm: 150, style: .speed, unit: .km), "24.0 km/h")      // cycling
+        XCTAssertEqual(PaceFormat.format(secondsPerKm: 0, style: .perDistance, unit: .km), "–")
+    }
+
+    func testDistanceUnits() {
+        XCTAssertEqual(DistanceUnit.mi.fromKm(1.609344), 1, accuracy: 1e-9)
+        XCTAssertEqual(DistanceUnit.mi.toKm(26.2), 42.1648, accuracy: 0.001)
+        XCTAssertEqual(DistanceUnit.km.fromKmShort(0.5), 500, accuracy: 1e-9)
+        XCTAssertEqual(DistanceUnit.km.format(km: 5.2), "5.2")
+        XCTAssertEqual(DistanceUnit.km.format(km: 10), "10")
+        XCTAssertEqual(DistanceUnit.km.format(km: 5.123), "5.12")
+    }
+
+    func testWhichActivitiesTrackDistanceAndGPS() {
+        XCTAssertTrue(ActivityMetrics.tracksDistance("Running"))
+        XCTAssertTrue(ActivityMetrics.supportsGPS("Running"))
+        XCTAssertTrue(ActivityMetrics.supportsGPS("Rowing"), "outdoor rowing")
+        XCTAssertTrue(ActivityMetrics.tracksDistance("Swimming"))
+        XCTAssertFalse(ActivityMetrics.supportsGPS("Swimming"), "pools have no GPS")
+        XCTAssertFalse(ActivityMetrics.tracksDistance("Yoga"))
+        XCTAssertEqual(ActivityMetrics.paceStyle(for: "Rowing"), .per500m)
+        XCTAssertEqual(ActivityMetrics.paceStyle(for: "Cycling"), .speed)
+        XCTAssertEqual(ActivityMetrics.paceStyle(for: "Swimming"), .per100)
+        XCTAssertEqual(ActivityMetrics.paceStyle(for: "Running"), .perDistance)
+        // Every activity we offer GPS for is one that tracks distance.
+        XCTAssertTrue(ActivityMetrics.gpsActivities.isSubset(of: ActivityMetrics.distanceActivities))
+        // And each of them exists as a tile somewhere, so the logger can show it.
+        let tiles = Set(WorkoutCategory.allCases.flatMap { $0.activities.map(\.name) })
+        XCTAssertTrue(ActivityMetrics.distanceActivities.isSubset(of: tiles))
+    }
+
+    func testCardioRecords() {
+        let workouts = [
+            run(5.0, 1500, daysAgo: 30),                 // 5:00 /km
+            run(5.2, 1450, daysAgo: 20),                 // 4:39 /km, counts toward 5K (scaled)
+            run(10.0, 3300, daysAgo: 10),                // 5:30 /km
+            run(0.4, 60, daysAgo: 5),                    // far too short for a pace record
+            run(3.0, 90, daysAgo: 4),                    // 0:30 /km: a typo, ignored
+            run(8.0, 2400, daysAgo: 2, activity: "Rowing")
+        ]
+        let records = CardioRecords.compute(workouts: workouts)
+        func record(_ activity: String, _ kind: CardioRecord.Kind) -> CardioRecord? {
+            records.first { $0.activity == activity && $0.kind == kind }
+        }
+
+        let bestPace = try? XCTUnwrap(record("Running", .bestPace))
+        XCTAssertEqual(bestPace?.value ?? 0, 1450.0 / 5.2, accuracy: 0.001)
+        XCTAssertEqual(record("Running", .longestDistance)?.value, 10.0)
+        XCTAssertEqual(record("Running", .longestTime)?.value, 3300)
+
+        // 5.2 km in 24:10 is scaled to a 5K of about 23:15, better than the exact 25:00.
+        let fiveK = record("Running", .fastest5K)
+        XCTAssertEqual(fiveK?.value ?? 0, 1450.0 * 5 / 5.2, accuracy: 0.001)
+        XCTAssertEqual(fiveK?.estimated, true)
+        XCTAssertEqual(record("Running", .fastest10K)?.value, 3300)
+        XCTAssertEqual(record("Running", .fastest10K)?.estimated, false)
+        XCTAssertNil(record("Running", .fastestHalf))
+
+        // Rowing is its own activity and has no standard-distance records.
+        XCTAssertNotNil(record("Rowing", .bestPace))
+        XCTAssertNil(record("Rowing", .fastest5K))
+    }
+
+    func testRecordsGroupByTheTileNotTheWorkoutName() {
+        let renamed = run(6, 1800, activity: "Running", name: "Morning jog by the river")
+        XCTAssertEqual(renamed.activityName, "Running")
+        XCTAssertNotNil(CardioRecords.compute(workouts: [renamed]).first { $0.kind == .bestPace })
+        // A custom workout with no tile isn't a recognised distance activity.
+        XCTAssertTrue(CardioRecords.compute(workouts: [run(6, 1800, activity: "", name: "Fun thing")]).isEmpty)
+    }
+
+    func testCardioBadgesOnlyForWhatBeatsEverythingElse() {
+        let old = run(5, 1500, daysAgo: 10)
+        let faster = run(5, 1380, daysAgo: 0)           // 4:36 /km
+        let longer = run(8, 2800, daysAgo: 0)           // 5:50 /km but longest ever
+        let first = run(5, 1500)
+        XCTAssertEqual(CardioRecords.badges(for: faster, among: [old, faster]), [.bestPace])
+        XCTAssertEqual(CardioRecords.badges(for: longer, among: [old, longer]), [.longestDistance])
+        XCTAssertEqual(CardioRecords.badges(for: first, among: [first]), [], "the very first run isn't beating anything")
+        XCTAssertEqual(CardioRecords.badges(for: old, among: [old, faster]), [], "beaten by a later run")
+    }
+
+    func testWorkoutKeepsDistanceTimeAndRoute() throws {
+        var w = run(5.4, 1720)
+        w.route = [RoutePoint(latitude: 51.5, longitude: -0.12), RoutePoint(latitude: 51.51, longitude: -0.13)]
+        let decoded = try JSONDecoder().decode([Workout].self, from: JSONEncoder().encode([w]))
+        XCTAssertEqual(decoded.first?.distanceKm, 5.4)
+        XCTAssertEqual(decoded.first?.durationSeconds, 1720)
+        XCTAssertEqual(decoded.first?.route.count, 2)
+        XCTAssertEqual(decoded.first?.activityName, "Running")
+        XCTAssertEqual(try XCTUnwrap(decoded.first?.paceSecondsPerKm), 1720 / 5.4, accuracy: 0.001)
+
+        // Older workouts have none of it, and a plain workout doesn't store an empty route.
+        let plain = workout(minutes: 30, muscles: [:])
+        let text = String(decoding: try JSONEncoder().encode(plain), as: UTF8.self)
+        XCTAssertFalse(text.contains("\"route\""))
+        XCTAssertNil(plain.paceSecondsPerKm)
+    }
+
+    private func sample(_ lat: Double, _ lon: Double, _ seconds: TimeInterval, accuracy: Double = 5) -> GPSSample {
+        GPSSample(latitude: lat, longitude: lon, timestamp: Date(timeIntervalSince1970: 1_700_000_000 + seconds), horizontalAccuracy: accuracy)
+    }
+
+    func testGPSDistanceMath() {
+        // 0.001 degrees of latitude is about 111.2 m.
+        let a = sample(51.0, 0.0, 0), b = sample(51.001, 0.0, 30)
+        XCTAssertEqual(OutdoorSession.distance(from: a, to: b), 111.2, accuracy: 0.5)
+        XCTAssertEqual(OutdoorSession.distance(from: a, to: a), 0, accuracy: 1e-6)
+    }
+
+    func testGPSSessionAddsDistanceAndIgnoresBadReadings() {
+        var session = OutdoorSession()
+        session.add(sample(51.0000, 0, 0))
+        session.add(sample(51.0010, 0, 30))                      // ~111 m
+        session.add(sample(51.00101, 0, 31))                     // ~1 m of wobble: ignored
+        session.add(sample(51.0020, 0, 60, accuracy: 80))        // too inaccurate: ignored
+        session.add(sample(51.0030, 0, 61))                      // ~222 m in 1 s: impossible, ignored
+        session.add(sample(51.0020, 0, 60))                      // good reading ~111 m on
+        XCTAssertEqual(session.distanceMeters, 222.4, accuracy: 1.0)
+        XCTAssertEqual(session.points.count, 3)
+        XCTAssertEqual(session.distanceKm, session.distanceMeters / 1000, accuracy: 1e-9)
+
+        // After a pause the next reading starts fresh; the gap isn't counted as running.
+        let before = session.distanceMeters
+        session.startNewSegment()
+        session.add(sample(52.0, 0, 3000))
+        XCTAssertEqual(session.distanceMeters, before, accuracy: 1e-9)
+    }
+
+    func testGPSRouteIsThinnedForStorage() {
+        var session = OutdoorSession()
+        for i in 0..<1000 {
+            session.add(sample(51.0 + Double(i) * 0.0001, 0, TimeInterval(i * 10)))
+        }
+        XCTAssertGreaterThan(session.points.count, 900)
+        let route = session.route(maxPoints: 300)
+        XCTAssertEqual(route.count, 300)
+        XCTAssertEqual(route.first?.latitude ?? 0, 51.0, accuracy: 1e-9, "keeps the start")
+        XCTAssertEqual(route.last?.latitude ?? 0, session.points.last?.latitude ?? 1, accuracy: 1e-9, "and the finish")
+        XCTAssertEqual(session.route(maxPoints: 5000).count, session.points.count)
+    }
+
+    func testActivitySuggestionFromSpeed() {
+        XCTAssertEqual(OutdoorSession.suggestedActivity(averageKmh: 5), "Walking")
+        XCTAssertEqual(OutdoorSession.suggestedActivity(averageKmh: 11), "Running")
+        XCTAssertEqual(OutdoorSession.suggestedActivity(averageKmh: 25), "Cycling")
+        XCTAssertNil(OutdoorSession.suggestedActivity(averageKmh: 0.2))
+        XCTAssertNil(OutdoorSession.suggestedActivity(averageKmh: 90), "faster than a bike: probably a vehicle")
+    }
+
+    @MainActor
+    func testCardioHistoryAndStrengthTrendHelpers() {
+        let url = tempURL("workouts")
+        defer { try? FileManager.default.removeItem(at: url) }
+        let store = WorkoutStore(fileURL: url)
+        store.add(run(5, 1500, daysAgo: 6))
+        store.add(run(6, 1700, daysAgo: 3))
+        store.add(run(8, 2400, daysAgo: 1, activity: "Rowing"))
+        XCTAssertEqual(store.cardioHistory(for: "Running").map { $0.distanceKm ?? 0 }, [5, 6], "oldest first")
+        XCTAssertEqual(store.cardioActivities().map(\.name), ["Rowing", "Running"])
+    }
 }
 

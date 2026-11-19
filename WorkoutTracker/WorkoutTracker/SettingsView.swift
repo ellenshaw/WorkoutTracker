@@ -13,6 +13,7 @@ struct SettingsView: View {
 
     @AppStorage(StorageKey.appearance) private var appearance = AppearanceMode.system.rawValue
     @AppStorage(StorageKey.heightUnit) private var heightUnit = HeightUnit.cm.rawValue
+    @AppStorage(StorageKey.distanceUnit) private var distanceUnit = DistanceUnit.km.rawValue
     @AppStorage(StorageKey.fadeHalfLifeDays) private var fadeHalfLife = 3.5
     @AppStorage(StorageKey.weightUnit) private var weightUnit = WeightUnit.kg.rawValue
     @AppStorage(StorageKey.userName) private var userName = ""
@@ -74,6 +75,13 @@ struct SettingsView: View {
 
                     Picker("Height", selection: $heightUnit) {
                         ForEach(HeightUnit.allCases) { unit in
+                            Text(unit.title).tag(unit.rawValue)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+
+                    Picker("Distance", selection: $distanceUnit) {
+                        ForEach(DistanceUnit.allCases) { unit in
                             Text(unit.title).tag(unit.rawValue)
                         }
                     }

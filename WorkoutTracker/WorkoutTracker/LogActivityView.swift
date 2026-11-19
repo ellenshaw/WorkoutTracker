@@ -24,6 +24,14 @@ struct LogActivityView: View {
     @State private var selectedMode: String?
     @State private var selectedRole: String?
 
+    // Distance activities (running, rowing, cycling...)
+    @State private var distanceText: String
+    @State private var secondsText = ""
+    @State private var route: [RoutePoint] = []
+    @State private var showingTracker = false
+    @State private var trackerNote: String?
+    @AppStorage(StorageKey.distanceUnit) private var distanceUnitRaw = DistanceUnit.km.rawValue
+
     @FocusState private var keyboardFocused: Bool
 
     private static let customTile = "Custom"
@@ -46,12 +54,41 @@ struct LogActivityView: View {
         _musclesEdited = State(initialValue: template != nil)
         _selectedMode = State(initialValue: template.flatMap { $0.mode.isEmpty ? nil : $0.mode })
         _selectedRole = State(initialValue: template.flatMap { $0.role.isEmpty ? nil : $0.role })
+
+        // Repeating a run starts with the same distance (in the unit the person uses).
+        var startingDistance = ""
+        if let km = template?.distanceKm, km > 0 {
+            let unit = DistanceUnit(rawValue: UserDefaults.standard.string(forKey: StorageKey.distanceUnit) ?? "") ?? .km
+            let short = ActivityMetrics.usesShortDistance(template?.activityName ?? "")
+            startingDistance = short ? String(Int(unit.fromKmShort(km).rounded())) : unit.format(km: km)
+        }
+        _distanceText = State(initialValue: startingDistance)
     }
 
     private var minutes: Int { Int(duration) ?? 0 }
+    private var extraSeconds: Int { min(max(Int(secondsText) ?? 0, 0), 59) }
+    /// Time to the second: the minutes plus any extra seconds.
+    private var totalSeconds: Int { minutes * 60 + extraSeconds }
+
+    private var distanceUnit: DistanceUnit { DistanceUnit(rawValue: distanceUnitRaw) ?? .km }
+    private var presetName: String { selectedActivity ?? "" }
+    private var tracksDistance: Bool { ActivityMetrics.tracksDistance(presetName) }
+    private var usesShortDistance: Bool { ActivityMetrics.usesShortDistance(presetName) }
+
+    /// The typed distance in kilometres, whatever unit it was typed in.
+    private var distanceKm: Double? {
+        guard tracksDistance, let value = Double(distanceText.replacingOccurrences(of: ",", with: ".")), value > 0 else { return nil }
+        return usesShortDistance ? distanceUnit.toKmShort(value) : distanceUnit.toKm(value)
+    }
+
+    private var livePace: String? {
+        guard let km = distanceKm, totalSeconds > 0 else { return nil }
+        return PaceFormat.format(secondsPerKm: PaceFormat.secondsPerKm(distanceKm: km, seconds: Double(totalSeconds)),
+                                 style: ActivityMetrics.paceStyle(for: presetName), unit: distanceUnit)
+    }
 
     private var canSave: Bool {
-        !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && (1...1440).contains(minutes)
+        !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && (60...86_400).contains(totalSeconds)
     }
 
     var body: some View {
@@ -71,6 +108,9 @@ struct LogActivityView: View {
         .navigationTitle(category.rawValue)
         .navigationBarTitleDisplayMode(.inline)
         .navigationBarBackButtonHidden(true)
+        .fullScreenCover(isPresented: $showingTracker) {
+            OutdoorTrackerView(activity: presetName, onFinish: applyTracked, onCancel: { showingTracker = false })
+        }
         .toolbar {
             ToolbarItem(placement: .cancellationAction) {
                 Button("Cancel", action: onCancel)
@@ -144,10 +184,22 @@ struct LogActivityView: View {
                     }
                 }
 
-                TextField("Minutes", text: $duration)
-                    .keyboardType(.numberPad)
-                    .focused($keyboardFocused)
-                    .fieldStyle()
+                HStack(spacing: 10) {
+                    TextField("Minutes", text: $duration)
+                        .keyboardType(.numberPad)
+                        .focused($keyboardFocused)
+                        .fieldStyle()
+                    if tracksDistance {
+                        TextField("Seconds", text: $secondsText)
+                            .keyboardType(.numberPad)
+                            .focused($keyboardFocused)
+                            .fieldStyle()
+                    }
+                }
+            }
+
+            if tracksDistance {
+                distanceSection
             }
 
             DatePicker("When", selection: $date, in: ...Date())
@@ -257,6 +309,75 @@ struct LogActivityView: View {
         )
     }
 
+    // MARK: Distance and GPS
+
+    private var distanceSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Distance")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+
+            HStack(spacing: 10) {
+                TextField("0", text: $distanceText)
+                    .keyboardType(.decimalPad)
+                    .focused($keyboardFocused)
+                    .fieldStyle()
+                Text(usesShortDistance ? distanceUnit.shortSymbol : distanceUnit.symbol)
+                    .foregroundStyle(.secondary)
+            }
+
+            if let livePace {
+                Label("Pace \(livePace)", systemImage: "speedometer")
+                    .font(.subheadline.weight(.medium))
+                    .foregroundStyle(category.tint)
+            }
+
+            if ActivityMetrics.supportsGPS(presetName) {
+                Button {
+                    keyboardFocused = false
+                    showingTracker = true
+                } label: {
+                    Label(route.isEmpty ? "Track outdoors with GPS" : "Track again with GPS", systemImage: "location.fill")
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 10)
+                        .background(category.tint.opacity(0.18))
+                        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(category.tint)
+
+                if !route.isEmpty {
+                    Label("Route saved on this device with the workout", systemImage: "map")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+
+            if let trackerNote {
+                Text(trackerNote)
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    /// Fills the form from a GPS session, and notices when the speed suggests a different activity.
+    private func applyTracked(_ result: OutdoorResult) {
+        showingTracker = false
+        route = result.route
+        duration = String(result.seconds / 60)
+        secondsText = String(result.seconds % 60)
+        distanceText = usesShortDistance
+            ? String(Int(distanceUnit.fromKmShort(result.distanceKm).rounded()))
+            : distanceUnit.format(km: result.distanceKm)
+
+        trackerNote = nil
+        if let guess = OutdoorSession.suggestedActivity(averageKmh: result.averageKmh), guess != presetName,
+           category.activities.contains(where: { $0.name == guess }) {
+            trackerNote = "Your average speed of \(String(format: "%.1f", distanceUnit == .km ? result.averageKmh : result.averageKmh / 1.609344)) \(distanceUnit == .km ? "km/h" : "mph") looks more like \(guess). You can change the activity above."
+        }
+    }
+
     private var musclesCard: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Muscles worked")
@@ -292,15 +413,21 @@ struct LogActivityView: View {
         var workout = Workout(
             name: name.trimmingCharacters(in: .whitespacesAndNewlines),
             category: category,
-            duration: minutes,
+            duration: max(1, Int((Double(totalSeconds) / 60).rounded())),
             notes: notes.trimmingCharacters(in: .whitespacesAndNewlines),
             date: date
         )
         // Longer sessions light the muscles up more, shorter ones less.
-        let factor = HeatCalculator.durationFactor(minutes: minutes)
+        let factor = HeatCalculator.durationFactor(minutes: max(1, totalSeconds / 60))
         workout.heat = intensities.mapValues { min($0 * factor, 1) }
         workout.mode = selectedMode ?? ""
         workout.role = selectedRole ?? ""
+        if let selectedActivity, selectedActivity != LogActivityView.customTile { workout.activity = selectedActivity }
+        if let km = distanceKm {
+            workout.distanceKm = km
+            workout.durationSeconds = totalSeconds
+            workout.route = route
+        }
         onSave(workout)
     }
 }

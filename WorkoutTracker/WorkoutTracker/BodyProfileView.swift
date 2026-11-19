@@ -17,6 +17,7 @@ struct BodyProfileView: View {
     @AppStorage(StorageKey.bodyHeightCm) private var heightCm = 172.0
     @AppStorage(StorageKey.weightUnit) private var unitRaw = WeightUnit.kg.rawValue
     @AppStorage(StorageKey.heightUnit) private var heightUnitRaw = HeightUnit.cm.rawValue
+    @AppStorage(StorageKey.distanceUnit) private var distanceUnitRaw = DistanceUnit.km.rawValue
     @AppStorage(StorageKey.hologramStyle) private var styleRaw = HologramStyle.crystal.rawValue
 
     @State private var weightText = ""
@@ -82,6 +83,13 @@ struct BodyProfileView: View {
 
                 Picker("Height", selection: $heightUnitRaw) {
                     ForEach(HeightUnit.allCases) { unit in
+                        Text(unit.title).tag(unit.rawValue)
+                    }
+                }
+                .pickerStyle(.segmented)
+
+                Picker("Distance", selection: $distanceUnitRaw) {
+                    ForEach(DistanceUnit.allCases) { unit in
                         Text(unit.title).tag(unit.rawValue)
                     }
                 }
@@ -301,13 +309,40 @@ struct AllRecordsView: View {
     @EnvironmentObject private var store: WorkoutStore
     @AppStorage(StorageKey.weightUnit) private var unitRaw = WeightUnit.kg.rawValue
 
+    @AppStorage(StorageKey.distanceUnit) private var distanceUnitRaw = DistanceUnit.km.rawValue
+
     private var unit: WeightUnit { WeightUnit(rawValue: unitRaw) ?? .kg }
+    private var distanceUnit: DistanceUnit { DistanceUnit(rawValue: distanceUnitRaw) ?? .km }
 
     var body: some View {
         let records = store.allRecords()
+        let cardio = CardioRecords.compute(workouts: store.workouts)
 
         List {
-            if records.isEmpty {
+            if !cardio.isEmpty {
+                Section("Cardio") {
+                    ForEach(cardio) { record in
+                        NavigationLink {
+                            CardioProgressView(activity: record.activity)
+                        } label: {
+                            HStack {
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text("\(record.activity) · \(record.kind.title)")
+                                    Text(record.date.formatted(date: .abbreviated, time: .omitted))
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                }
+                                Spacer()
+                                Text(CardioRecordText.value(record, activity: record.activity, unit: distanceUnit))
+                                    .monospacedDigit()
+                            }
+                            .accessibilityElement(children: .combine)
+                        }
+                    }
+                }
+            }
+
+            if records.isEmpty && cardio.isEmpty {
                 ContentUnavailableView("No records yet", systemImage: "trophy",
                                        description: Text("Log a strength workout and your best sets show up here."))
                     .listRowBackground(Color.clear)
