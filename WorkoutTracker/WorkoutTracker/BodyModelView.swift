@@ -122,7 +122,7 @@ struct BodyModelView: UIViewRepresentable {
         /// Brightness of the blue crystal body itself (facets, edges, nodes, halo). Lower is darker.
         /// The heat colors, the bloom and the muscle outlines are deliberately not tied to this, so
         /// the heat map looks the same however dark the body is.
-        private static let crystalBrightness: CGFloat = 0.4
+        private static let crystalBrightness: CGFloat = 0.22
 
         private let crystalFillMaterial = Coordinator.glassMaterial(alpha: 0.42 * Coordinator.crystalBrightness)
         private let crystalEdgeMaterial = Coordinator.glassMaterial(alpha: 0.35 * Coordinator.crystalBrightness)
