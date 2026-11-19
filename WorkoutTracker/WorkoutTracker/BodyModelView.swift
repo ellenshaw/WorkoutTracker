@@ -119,14 +119,15 @@ struct BodyModelView: UIViewRepresentable {
         private let fillMaterial = Coordinator.litMaterial()
         private let lineMaterial = Coordinator.constantMaterial(.white)
         private let haloMaterial = Coordinator.constantMaterial(Hologram.glow, alpha: 0.14, additive: true)
-        /// Overall brightness of the crystal body, glow and heat colors (1.0 = full).
-        private static let crystalBrightness: CGFloat = 0.75
+        /// Brightness of the blue crystal body (facets, edges, nodes, outlines, glow). Lower is darker.
+        /// The heat colors are deliberately not affected, so they stay vivid against a darker body.
+        private static let crystalBrightness: CGFloat = 0.5
 
         private let crystalFillMaterial = Coordinator.glassMaterial(alpha: 0.42 * Coordinator.crystalBrightness)
         private let crystalEdgeMaterial = Coordinator.glassMaterial(alpha: 0.35 * Coordinator.crystalBrightness)
         private let crystalDotMaterial = Coordinator.glassMaterial(alpha: 0.7 * Coordinator.crystalBrightness)
         private let crystalHeatMaterial: SCNMaterial = {
-            let material = Coordinator.constantMaterial(.white, alpha: 1.0 * Coordinator.crystalBrightness)
+            let material = Coordinator.constantMaterial(.white, alpha: 1.0)
             material.writesToDepthBuffer = false
             return material
         }()
