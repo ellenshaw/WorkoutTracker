@@ -692,7 +692,7 @@ enum BodyAsset {
                 total += tint.amount
                 if tint.amount > strongest { strongest = tint.amount; heatColor = tint.color }
             }
-            if min(total / 3 * 1.6, 1) < 0.3 { continue }
+            if min(total / 3 * 2.2, 1) < 0.15 { continue }
 
             let normal = crystal.normals[base]
             var a = crystal.positions[base], b = crystal.positions[base + 1], c = crystal.positions[base + 2]

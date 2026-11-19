@@ -17,9 +17,14 @@ enum HeatScale {
         (1.0, SIMD3<Float>(0.93, 0.16, 0.16))    // red
     ]
 
-    /// Color for an intensity from 0 (cold) to 1 (hot).
+    /// Color for an intensity from 0 (not worked) to 1 (maximum).
+    ///
+    /// Zero is the cold blue of the body. Anything above zero jumps to at least cyan, so even a
+    /// light or faded muscle is clearly a different color from the unworked body instead of
+    /// blending into it.
     static func rgb(_ value: Double) -> SIMD3<Float> {
-        let t = min(max(value, 0), 1)
+        let clamped = min(max(value, 0), 1)
+        let t = clamped > 0 ? 0.2 + 0.8 * clamped : 0
         for i in 0..<(stops.count - 1) {
             let lower = stops[i]
             let upper = stops[i + 1]
@@ -48,7 +53,10 @@ enum HeatScale {
 
     static var gradient: LinearGradient {
         LinearGradient(
-            stops: stops.map { Gradient.Stop(color: color($0.position), location: $0.position) },
+            stops: (0...10).map { step -> Gradient.Stop in
+                let position = Double(step) / 10
+                return Gradient.Stop(color: color(position), location: position)
+            },
             startPoint: .leading,
             endPoint: .trailing
         )

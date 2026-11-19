@@ -123,7 +123,7 @@ struct BodyModelView: UIViewRepresentable {
         private let crystalEdgeMaterial = Coordinator.glassMaterial(alpha: 0.35)
         private let crystalDotMaterial = Coordinator.glassMaterial(alpha: 0.7)
         private let crystalHeatMaterial: SCNMaterial = {
-            let material = Coordinator.constantMaterial(.white, alpha: 0.93)
+            let material = Coordinator.constantMaterial(.white, alpha: 1.0)
             material.writesToDepthBuffer = false
             return material
         }()

@@ -93,6 +93,10 @@ final class WorkoutTrackerTests: XCTestCase {
         XCTAssertGreaterThan(cold.z, cold.x)       // blue
         XCTAssertGreaterThan(hot.x, hot.z)         // red
         XCTAssertGreaterThan(HeatScale.rgb(0.4).y, HeatScale.rgb(0.4).x)   // green in the middle
+        // Any worked muscle is clearly different from the blue body, even a faint one.
+        let faint = HeatScale.rgb(0.05)
+        XCTAssertGreaterThan(faint.y, 0.7, "a barely-worked muscle should read as cyan, not blue")
+        XCTAssertGreaterThan(faint.y - faint.x, 0.5)
         XCTAssertEqual(HeatScale.rgb(-3), cold)
         XCTAssertEqual(HeatScale.rgb(9), hot)
     }
