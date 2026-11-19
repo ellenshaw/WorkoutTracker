@@ -41,7 +41,18 @@ curl -X POST http://localhost:8787/chat \
 The iOS simulator blocks plain `http://` addresses. To test the app against your laptop, expose it over HTTPS with
 a tunnel (for example `cloudflared tunnel --url http://localhost:8787`) and use that URL in the app.
 
-## Deploy it
+## Deploy it (the quickest way: Render)
+
+1. Get an API key at console.anthropic.com and set a monthly **spending limit** there.
+2. Push this repo to GitHub, then on render.com choose **New → Blueprint** and pick it. It reads `render.yaml`.
+3. When asked, paste your `ANTHROPIC_API_KEY`. Render generates `APP_KEY` for you.
+4. When it finishes you get a URL like `https://workout-coach.onrender.com`. Open `/health` to check it says `{"ok":true}`.
+5. Copy the URL and the generated `APP_KEY` (Render dashboard → Environment) into the app's Info.plist
+   as `CoachBaseURL` and `CoachAppKey`. Build, and the coach works for everyone with no setup.
+
+The `starter` plan stays awake. The free plan sleeps when idle and makes the first chat slow.
+
+## Deploy it anywhere else
 
 Any host that runs a Docker image or Node works (Render, Fly.io, Railway, Google Cloud Run). The steps are the same:
 

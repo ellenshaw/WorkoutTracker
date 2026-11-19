@@ -1,0 +1,23 @@
+# One-click deploy of the coach backend on Render (render.com).
+# New + > Blueprint > pick this repo. Render asks for ANTHROPIC_API_KEY; APP_KEY is generated for you.
+services:
+  - type: web
+    name: workout-coach
+    runtime: docker
+    rootDir: backend
+    dockerfilePath: ./Dockerfile
+    # The free plan goes to sleep when idle, so the first chat after a quiet spell waits up to a minute.
+    # "starter" stays awake and is the right choice once real people use it.
+    plan: starter
+    healthCheckPath: /health
+    envVars:
+      - key: ANTHROPIC_API_KEY
+        sync: false          # you type it in the Render dashboard; it is never stored in git
+      - key: APP_KEY
+        generateValue: true  # Render makes a long random value; copy it into the app's Info.plist
+      - key: MODEL
+        value: claude-opus-5-5
+      - key: LIMIT_PER_INSTALL_HOUR
+        value: "12"
+      - key: LIMIT_PER_INSTALL_DAY
+        value: "60"
