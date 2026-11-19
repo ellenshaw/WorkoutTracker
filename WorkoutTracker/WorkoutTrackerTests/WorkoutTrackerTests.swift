@@ -1243,7 +1243,7 @@ final class WorkoutTrackerTests: XCTestCase {
         session.add(sample(51.0010, 0, 30))                      // ~111 m
         session.add(sample(51.00101, 0, 31))                     // ~1 m of wobble: ignored
         session.add(sample(51.0020, 0, 60, accuracy: 80))        // too inaccurate: ignored
-        session.add(sample(51.0030, 0, 61))                      // ~222 m in 1 s: impossible, ignored
+        session.add(sample(51.0030, 0, 31.5))                    // ~222 m in 1.5 s: impossible, ignored
         session.add(sample(51.0020, 0, 60))                      // good reading ~111 m on
         XCTAssertEqual(session.distanceMeters, 222.4, accuracy: 1.0)
         XCTAssertEqual(session.points.count, 3)
