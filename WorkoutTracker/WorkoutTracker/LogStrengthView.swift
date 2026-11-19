@@ -8,6 +8,18 @@
 
 import SwiftUI
 
+/// What a new set starts with. Only the weight is remembered from last time (reps are yours to
+/// decide); last time's numbers are still shown in the "Previous" column for reference.
+enum StrengthPrefill {
+    /// Last time's weight for this set number, or for the last set if you did fewer before.
+    /// Empty when there is no history or the sets used no weight.
+    static func weightText(previous: [LoggedSet], index: Int, unit: WeightUnit) -> String {
+        guard let last = previous.last else { return "" }
+        let set = previous.indices.contains(index) ? previous[index] : last
+        return set.weightKg > 0 ? unit.format(kg: set.weightKg) : ""
+    }
+}
+
 private struct DraftSet: Identifiable, Hashable {
     let id = UUID()
     var weight = ""
@@ -33,6 +45,7 @@ struct LogStrengthView: View {
     let onSave: (Workout) -> Void
 
     @EnvironmentObject private var store: WorkoutStore
+    @EnvironmentObject private var cycle: CycleStore
     @AppStorage(StorageKey.weightUnit) private var unitRaw = WeightUnit.kg.rawValue
 
     @State private var title: String
@@ -99,6 +112,10 @@ struct LogStrengthView: View {
 
                 statsBar
 
+                if let note = cycle.note(), note.kind != .general {
+                    CycleBanner(note: note)
+                }
+
                 ForEach($exercises) { $draft in
                     exerciseCard($draft)
                 }
@@ -145,8 +162,9 @@ struct LogStrengthView: View {
         .sheet(isPresented: $showingPicker) {
             ExercisePickerView { picked in
                 for exercise in picked {
-                    exercises.append(DraftExercise(exercise: exercise, sets: [DraftSet()],
-                                                   previous: store.lastSets(for: exercise.id)))
+                    let previous = store.lastSets(for: exercise.id)
+                    let first = DraftSet(weight: StrengthPrefill.weightText(previous: previous, index: 0, unit: unit))
+                    exercises.append(DraftExercise(exercise: exercise, sets: [first], previous: previous))
                 }
             }
         }
@@ -165,14 +183,24 @@ struct LogStrengthView: View {
             stat(title: "Volume") { Text(volumeText) }
             Divider().frame(height: 30)
             stat(title: "Sets") { Text("\(doneSets.count)") }
+            Divider().frame(height: 30)
+            stat(title: "Top weight") { Text(maxWeightText) }
         }
         .cardStyle()
+    }
+
+    /// The heaviest weight among the sets you've ticked off so far.
+    private var maxWeightText: String {
+        let kg = doneSets.map { unit.toKg(parsedWeight($0.1.weight) ?? 0) }.max() ?? 0
+        return kg > 0 ? "\(unit.format(kg: kg)) \(unit.symbol)" : "–"
     }
 
     private func stat<Content: View>(title: String, @ViewBuilder value: () -> Content) -> some View {
         VStack(spacing: 2) {
             value()
                 .font(.headline)
+                .minimumScaleFactor(0.7)
+                .lineLimit(1)
             Text(title)
                 .font(.caption)
                 .foregroundStyle(.secondary)
@@ -242,7 +270,7 @@ struct LogStrengthView: View {
     private func setRow(index: Int, entry: Binding<DraftSet>, previous: LoggedSet?) -> some View {
         let prevText = previous.map { "\(unit.format(kg: $0.weightKg)) × \($0.reps)" } ?? "–"
         let weightHint = previous.map { unit.format(kg: $0.weightKg) } ?? "0"
-        let repsHint = previous.map { String($0.reps) } ?? "0"
+        let repsHint = "reps"
 
         return HStack(spacing: 8) {
             Text("\(index + 1)")
@@ -307,7 +335,11 @@ struct LogStrengthView: View {
 
     private func addSet(to id: UUID) {
         guard let index = exercises.firstIndex(where: { $0.id == id }) else { return }
-        exercises[index].sets.append(DraftSet())
+        // The weight comes from last time (or, with no history, repeats the set above); reps stay empty.
+        var weight = StrengthPrefill.weightText(previous: exercises[index].previous,
+                                                index: exercises[index].sets.count, unit: unit)
+        if weight.isEmpty, let above = exercises[index].sets.last?.weight { weight = above }
+        exercises[index].sets.append(DraftSet(weight: weight))
     }
 
     private func removeLastSet(from id: UUID) {
@@ -322,12 +354,9 @@ struct LogStrengthView: View {
             set.wrappedValue.done = false
             return
         }
-        // Empty fields fall back to last time's numbers, like Hevy.
-        if set.wrappedValue.weight.isEmpty, let previous {
+        // An empty weight falls back to last time's. Reps are never filled in for you.
+        if set.wrappedValue.weight.isEmpty, let previous, previous.weightKg > 0 {
             set.wrappedValue.weight = unit.format(kg: previous.weightKg)
-        }
-        if set.wrappedValue.reps.isEmpty, let previous {
-            set.wrappedValue.reps = String(previous.reps)
         }
         if (Int(set.wrappedValue.reps) ?? 0) > 0 {
             set.wrappedValue.done = true

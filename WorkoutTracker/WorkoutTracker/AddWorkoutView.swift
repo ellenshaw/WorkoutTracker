@@ -24,6 +24,7 @@ enum LogRoute: Hashable {
 struct AddWorkoutView: View {
     @EnvironmentObject private var store: WorkoutStore
     @EnvironmentObject private var plans: PlanStore
+    @EnvironmentObject private var cycle: CycleStore
     @Environment(\.dismiss) private var dismiss
 
     private let planSessionID: UUID?
@@ -64,6 +65,9 @@ struct AddWorkoutView: View {
     }
 
     private func finish(_ workout: Workout) {
+        // Only when cycle tracking is on. Kept on the device so charts can explain a dip.
+        var workout = workout
+        workout.cyclePhase = cycle.phase(on: workout.date)?.rawValue ?? ""
         store.add(workout)
         if let planSessionID {
             plans.complete(sessionID: planSessionID, workoutID: workout.id)

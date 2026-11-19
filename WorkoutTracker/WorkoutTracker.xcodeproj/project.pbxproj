@@ -44,6 +44,9 @@
 		904B5EE00000000000000007 /* CoachChatView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 904B5EE00000000000000008 /* CoachChatView.swift */; };
 		904B5EE00000000000000009 /* PlansView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 904B5EE0000000000000000A /* PlansView.swift */; };
 		904B5EF00000000000000001 /* body_lowpoly.bin in Resources */ = {isa = PBXBuildFile; fileRef = 904B5EF00000000000000002 /* body_lowpoly.bin */; };
+		904B5F000000000000000001 /* CycleStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 904B5F000000000000000002 /* CycleStore.swift */; };
+		904B5F000000000000000003 /* CycleViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 904B5F000000000000000004 /* CycleViews.swift */; };
+		904B5F000000000000000005 /* ProgressViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 904B5F000000000000000006 /* ProgressViews.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -104,6 +107,9 @@
 		904B5EE00000000000000008 /* CoachChatView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CoachChatView.swift; sourceTree = "<group>"; };
 		904B5EE0000000000000000A /* PlansView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlansView.swift; sourceTree = "<group>"; };
 		904B5EF00000000000000002 /* body_lowpoly.bin */ = {isa = PBXFileReference; lastKnownFileType = file; path = body_lowpoly.bin; sourceTree = "<group>"; };
+		904B5F000000000000000002 /* CycleStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CycleStore.swift; sourceTree = "<group>"; };
+		904B5F000000000000000004 /* CycleViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CycleViews.swift; sourceTree = "<group>"; };
+		904B5F000000000000000006 /* ProgressViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProgressViews.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -162,6 +168,9 @@
 				904B5E822FABB414008E659A /* WorkoutHomeView.swift */,
 				904B5E862FABB476008E659A /* AddWorkoutView.swift */,
 				904B5E882FABC04E008E659A /* RegisterView.swift */,
+				904B5F000000000000000002 /* CycleStore.swift */,
+				904B5F000000000000000004 /* CycleViews.swift */,
+				904B5F000000000000000006 /* ProgressViews.swift */,
 				904B5EF00000000000000002 /* body_lowpoly.bin */,
 				904B5EE00000000000000002 /* CoachModels.swift */,
 				904B5EE00000000000000004 /* PlanStore.swift */,
@@ -359,6 +368,9 @@
 				904B5E892FABC04E008E659A /* RegisterView.swift in Sources */,
 				904B5E492FAB00F9008E659A /* WorkoutTrackerApp.swift in Sources */,
 				904B5E812FABB3D8008E659A /* Workout.swift in Sources */,
+				904B5F000000000000000001 /* CycleStore.swift in Sources */,
+				904B5F000000000000000003 /* CycleViews.swift in Sources */,
+				904B5F000000000000000005 /* ProgressViews.swift in Sources */,
 				904B5EE00000000000000001 /* CoachModels.swift in Sources */,
 				904B5EE00000000000000003 /* PlanStore.swift in Sources */,
 				904B5EE00000000000000005 /* CoachService.swift in Sources */,

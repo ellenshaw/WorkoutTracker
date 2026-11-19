@@ -9,6 +9,7 @@ struct SettingsView: View {
     @EnvironmentObject private var store: WorkoutStore
     @EnvironmentObject private var plans: PlanStore
     @EnvironmentObject private var coach: CoachModel
+    @EnvironmentObject private var cycle: CycleStore
 
     @AppStorage(StorageKey.appearance) private var appearance = AppearanceMode.system.rawValue
     @AppStorage(StorageKey.heightUnit) private var heightUnit = HeightUnit.cm.rawValue
@@ -98,6 +99,23 @@ struct SettingsView: View {
                     Text("When on, the coach sees your age, weight, height, records and recent workouts so plans fit you. Messages are processed by an AI service.")
                 }
 
+                Section {
+                    NavigationLink {
+                        CycleSettingsView()
+                    } label: {
+                        HStack {
+                            Label("Cycle tracking", systemImage: "drop.fill")
+                            Spacer()
+                            Text(cycle.isEnabled ? "On" : "Off")
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                } header: {
+                    Text("Health")
+                } footer: {
+                    Text("Optional, for people who have periods. Stays on this device.")
+                }
+
                 Section("Account") {
                     if !userName.isEmpty {
                         LabeledContent("Signed in as", value: userName)
@@ -124,6 +142,7 @@ struct SettingsView: View {
                     store.removeAll()
                     plans.removeAll()
                     coach.clear()
+                    cycle.removeAll()
                     coachConsent = false
                     userName = ""
                     isLoggedIn = false

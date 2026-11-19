@@ -31,4 +31,5 @@ struct ContentView: View {
         .environmentObject(WorkoutStore())
         .environmentObject(PlanStore())
         .environmentObject(CoachModel())
+        .environmentObject(CycleStore())
 }

@@ -7,6 +7,7 @@ import SwiftUI
 
 struct WorkoutHomeView: View {
     @EnvironmentObject private var store: WorkoutStore
+    @EnvironmentObject private var cycle: CycleStore
     @State private var session: LogSession?
 
     var body: some View {
@@ -15,6 +16,12 @@ struct WorkoutHomeView: View {
                 Section {
                     SummaryCard(workoutCount: store.workoutsThisWeek.count, totalMinutes: store.minutesThisWeek)
                         .listRowInsets(EdgeInsets())
+                        .listRowBackground(Color.clear)
+                }
+
+                if cycle.isEnabled {
+                    CycleCard()
+                        .listRowInsets(EdgeInsets(top: 0, leading: 0, bottom: 8, trailing: 0))
                         .listRowBackground(Color.clear)
                 }
 
@@ -74,6 +81,14 @@ struct WorkoutHomeView: View {
                 WorkoutResultView(workout: workout)
             }
             .toolbar {
+                ToolbarItem(placement: .navigationBarLeading) {
+                    NavigationLink {
+                        ProgressListView()
+                    } label: {
+                        Image(systemName: "chart.line.uptrend.xyaxis")
+                    }
+                    .accessibilityLabel("Progress charts")
+                }
                 ToolbarItem(placement: .primaryAction) {
                     Button {
                         session = LogSession()

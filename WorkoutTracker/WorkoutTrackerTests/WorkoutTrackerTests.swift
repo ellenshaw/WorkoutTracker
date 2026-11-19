@@ -897,5 +897,214 @@ final class WorkoutTrackerTests: XCTestCase {
         XCTAssertEqual(restored, base, accuracy: 1e-9)
         XCTAssertEqual(HeatLevel(nearest: restored), .heavy)
     }
+
+    // MARK: Last time's weight, progress charts, cycle tracking
+
+    func testOnlyTheWeightIsRememberedNotTheReps() {
+        let previous = [LoggedSet(weightKg: 80, reps: 8), LoggedSet(weightKg: 80, reps: 6), LoggedSet(weightKg: 75, reps: 5)]
+        XCTAssertEqual(StrengthPrefill.weightText(previous: previous, index: 0, unit: .kg), "80")
+        XCTAssertEqual(StrengthPrefill.weightText(previous: previous, index: 2, unit: .kg), "75")
+        XCTAssertEqual(StrengthPrefill.weightText(previous: previous, index: 7, unit: .kg), "75", "more sets than last time: use the last one")
+        XCTAssertEqual(StrengthPrefill.weightText(previous: [], index: 0, unit: .kg), "")
+        XCTAssertEqual(StrengthPrefill.weightText(previous: [LoggedSet(weightKg: 0, reps: 12)], index: 0, unit: .kg), "", "bodyweight: nothing to fill")
+        XCTAssertEqual(StrengthPrefill.weightText(previous: [LoggedSet(weightKg: WeightUnit.lb.toKg(135), reps: 5)], index: 0, unit: .lb), "135")
+    }
+
+    @MainActor
+    func testProgressHistoryAndVolumes() {
+        let url = tempURL("workouts")
+        defer { try? FileManager.default.removeItem(at: url) }
+        let store = WorkoutStore(fileURL: url)
+        let squat = BigLift.squat
+
+        func log(_ sets: [(Double, Int)], daysAgo: Int, phase: String = "") {
+            var w = workout(minutes: 45, daysAgo: daysAgo, muscles: [.quads: 0.8])
+            w.exercises = [LoggedExercise(exerciseID: squat.exerciseID, name: squat.exerciseName, primary: [.quads],
+                                          secondary: [], sets: sets.map { LoggedSet(weightKg: $0.0, reps: $0.1) })]
+            w.cyclePhase = phase
+            store.add(w)
+        }
+        log([(100, 5), (100, 5), (90, 8)], daysAgo: 14)
+        log([(110, 5), (105, 5)], daysAgo: 7, phase: CyclePhase.menstrual.rawValue)
+        log([(120, 3)], daysAgo: 0)
+
+        let history = store.history(for: squat.exerciseID)
+        XCTAssertEqual(history.count, 3)
+        XCTAssertEqual(history.map(\.maxWeightKg), [100, 110, 120], "oldest first")
+        XCTAssertEqual(history[0].volumeKg, 100 * 5 + 100 * 5 + 90 * 8, accuracy: 0.001)
+        XCTAssertEqual(history[0].sets, 3)
+        XCTAssertEqual(history[1].oneRepMaxKg, PersonalRecord.estimateOneRepMax(weightKg: 110, reps: 5), accuracy: 0.001)
+        XCTAssertEqual(history[2].topSetReps, 3)
+        XCTAssertEqual(history.map(\.onPeriod), [false, true, false])
+        XCTAssertTrue(store.history(for: "nope").isEmpty)
+
+        let volumes = store.workoutVolumes()
+        XCTAssertEqual(volumes.count, 3)
+        XCTAssertEqual(volumes.last?.volumeKg ?? 0, 360, accuracy: 0.001)
+
+        let logged = store.loggedExercises()
+        XCTAssertEqual(logged.count, 1)
+        XCTAssertEqual(logged[0].workouts, 3)
+        XCTAssertGreaterThan(logged[0].best1RMKg, 120)
+    }
+
+    @MainActor
+    private func makeCycle() -> (store: CycleStore, url: URL, defaults: UserDefaults) {
+        let defaults = UserDefaults(suiteName: "test.\(UUID().uuidString)")!
+        let url = tempURL("cycle")
+        return (CycleStore(fileURL: url, defaults: defaults, notifications: false), url, defaults)
+    }
+
+    private func daysAgo(_ n: Int) -> Date {
+        Calendar.current.date(byAdding: .day, value: -n, to: Calendar.current.startOfDay(for: Date()))!
+    }
+
+    @MainActor
+    func testCycleIsOffByDefaultAndInertUntilEnabled() {
+        let (cycle, url, _) = makeCycle()
+        defer { try? FileManager.default.removeItem(at: url) }
+        XCTAssertFalse(cycle.isEnabled)
+        cycle.logPeriodStart(daysAgo(2))
+        XCTAssertNil(cycle.phase())
+        XCTAssertNil(cycle.note())
+        XCTAssertNil(cycle.predictedNextStart())
+        cycle.isEnabled = true
+        XCTAssertEqual(cycle.phase(), .menstrual)
+    }
+
+    @MainActor
+    func testCyclePhasesFollowTheDayOfTheCycle() {
+        let (cycle, url, _) = makeCycle()
+        defer { try? FileManager.default.removeItem(at: url) }
+        cycle.isEnabled = true
+        let start = daysAgo(40)
+        cycle.logPeriodStart(start)
+        func phase(onDay day: Int) -> CyclePhase? {
+            cycle.phase(on: Calendar.current.date(byAdding: .day, value: day - 1, to: start)!)
+        }
+        // Default 28-day cycle with a 5-day period.
+        XCTAssertEqual(phase(onDay: 1), .menstrual)
+        XCTAssertEqual(phase(onDay: 5), .menstrual)
+        XCTAssertEqual(phase(onDay: 6), .follicular)
+        XCTAssertEqual(phase(onDay: 12), .follicular)
+        XCTAssertEqual(phase(onDay: 13), .ovulation)
+        XCTAssertEqual(phase(onDay: 15), .ovulation)
+        XCTAssertEqual(phase(onDay: 16), .luteal)
+        XCTAssertEqual(phase(onDay: 28), .luteal)
+        XCTAssertNil(phase(onDay: 60), "data that old is out of date; say nothing rather than guess")
+        XCTAssertNil(cycle.phase(on: Calendar.current.date(byAdding: .day, value: -1, to: start)!), "before the first logged period")
+    }
+
+    @MainActor
+    func testCycleLengthComesFromYourOwnHistory() {
+        let (cycle, url, _) = makeCycle()
+        defer { try? FileManager.default.removeItem(at: url) }
+        cycle.isEnabled = true
+        XCTAssertEqual(cycle.averageCycleLength(), 28)
+
+        cycle.logPeriodStart(daysAgo(0))
+        cycle.logPeriodStart(daysAgo(28))
+        cycle.logPeriodStart(daysAgo(58))   // gaps of 28 and 30
+        XCTAssertEqual(cycle.averageCycleLength(), 29)
+
+        // A missed log (a 90-day gap) is ignored instead of wrecking the average.
+        cycle.logPeriodStart(daysAgo(148))
+        XCTAssertEqual(cycle.averageCycleLength(), 29)
+
+        let next = cycle.predictedNextStart()
+        XCTAssertEqual(next, Calendar.current.date(byAdding: .day, value: 29, to: daysAgo(0)))
+        XCTAssertEqual(cycle.daysUntilNextPeriod(), 29)
+    }
+
+    @MainActor
+    func testLoggedPeriodEndChangesThePhase() {
+        let (cycle, url, _) = makeCycle()
+        defer { try? FileManager.default.removeItem(at: url) }
+        cycle.isEnabled = true
+        cycle.logPeriodStart(daysAgo(8))
+        XCTAssertEqual(cycle.phase(), .follicular, "8 days in with no end logged: past the typical 5-day period")
+        cycle.endPeriod(on: daysAgo(1))
+        XCTAssertEqual(cycle.phase(on: daysAgo(3)), .menstrual, "period lasted through day 7")
+        XCTAssertFalse(cycle.hasOpenPeriod)
+        XCTAssertEqual(cycle.averagePeriodLength(), 7)
+    }
+
+    @MainActor
+    func testCycleNotesAreSupportiveAndOnlyNagWhenRelevant() {
+        let (cycle, url, _) = makeCycle()
+        defer { try? FileManager.default.removeItem(at: url) }
+        cycle.isEnabled = true
+        cycle.logPeriodStart(daysAgo(1))
+        let period = cycle.note()
+        XCTAssertEqual(period?.kind, .period)
+        XCTAssertTrue(period?.title.contains("day 2") ?? false)
+        XCTAssertTrue(period?.message.lowercased().contains("okay to lift lighter") ?? false)
+
+        // The day or two before the next one is expected.
+        let (soon, soonURL, _) = makeCycle()
+        defer { try? FileManager.default.removeItem(at: soonURL) }
+        soon.isEnabled = true
+        soon.logPeriodStart(daysAgo(26))
+        XCTAssertEqual(soon.note()?.kind, .expectedSoon)
+
+        // Mid-cycle: a general note, not a "lift less" nudge.
+        let (mid, midURL, _) = makeCycle()
+        defer { try? FileManager.default.removeItem(at: midURL) }
+        mid.isEnabled = true
+        mid.logPeriodStart(daysAgo(9))
+        XCTAssertEqual(mid.note()?.kind, .general)
+    }
+
+    @MainActor
+    func testCycleDataPersistsAndCanBeErased() {
+        let defaults = UserDefaults(suiteName: "test.\(UUID().uuidString)")!
+        let url = tempURL("cycle")
+        defer { try? FileManager.default.removeItem(at: url) }
+
+        let cycle = CycleStore(fileURL: url, defaults: defaults, notifications: false)
+        cycle.isEnabled = true
+        cycle.typicalCycleDays = 31
+        cycle.logPeriodStart(daysAgo(3))
+        cycle.logPeriodStart(daysAgo(3))   // same day: replaced, not duplicated
+        XCTAssertEqual(cycle.entries.count, 1)
+
+        let reloaded = CycleStore(fileURL: url, defaults: defaults, notifications: false)
+        XCTAssertEqual(reloaded.entries.count, 1)
+        XCTAssertTrue(reloaded.isEnabled)
+        XCTAssertEqual(reloaded.typicalCycleDays, 31)
+
+        reloaded.removeAll()
+        XCTAssertTrue(CycleStore(fileURL: url, defaults: defaults, notifications: false).entries.isEmpty)
+        XCTAssertFalse(reloaded.isEnabled)
+    }
+
+    func testWorkoutKeepsCyclePhaseAndOlderOnesLoad() throws {
+        var w = workout(minutes: 30, muscles: [.quads: 0.5])
+        w.cyclePhase = CyclePhase.menstrual.rawValue
+        let decoded = try JSONDecoder().decode([Workout].self, from: JSONEncoder().encode([w]))
+        XCTAssertEqual(decoded.first?.cyclePhase, "menstrual")
+
+        let old = #"[{"id":"3F2504E0-4F89-11D3-9A0C-0305E82C3301","name":"Run","category":"Cardio","duration":30,"notes":"","date":"2026-05-01T10:00:00Z"}]"#
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        XCTAssertEqual(try decoder.decode([Workout].self, from: Data(old.utf8)).first?.cyclePhase, "")
+    }
+
+    @MainActor
+    func testCycleDataNeverReachesTheCoach() throws {
+        let workoutURL = tempURL("workouts"), planURL = tempURL("plans")
+        defer { [workoutURL, planURL].forEach { try? FileManager.default.removeItem(at: $0) } }
+        let store = WorkoutStore(fileURL: workoutURL)
+        var w = workout(minutes: 40, muscles: [.chest: 0.8])
+        w.cyclePhase = CyclePhase.menstrual.rawValue
+        store.add(w)
+
+        let context = CoachContextBuilder.make(workouts: store, plans: PlanStore(fileURL: planURL),
+                                               profile: BodyProfile(), weightUnit: .kg, heightUnit: .cm, shareHistory: true)
+        let json = String(decoding: try JSONEncoder().encode(context), as: UTF8.self).lowercased()
+        for word in ["cycle", "period", "menstrual", "luteal", "follicular"] {
+            XCTAssertFalse(json.contains(word), "coach context should never mention \(word)")
+        }
+    }
 }
 

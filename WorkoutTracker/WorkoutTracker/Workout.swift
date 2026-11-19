@@ -41,6 +41,9 @@ struct Workout: Identifiable, Codable, Hashable {
     /// Session type ("Game", "Tempo", "Practice"...) and position or style ("Cutter", "Handler"...).
     var mode = ""
     var role = ""
+    /// Cycle phase when this was logged, only if the user tracks their cycle ("menstrual", ...).
+    /// Lets progress charts explain a dip. Stays on the device.
+    var cyclePhase = ""
 
     init(id: UUID = UUID(),
          name: String,
@@ -52,7 +55,8 @@ struct Workout: Identifiable, Codable, Hashable {
          exercises: [LoggedExercise] = [],
          isPinned: Bool = false,
          mode: String = "",
-         role: String = "") {
+         role: String = "",
+         cyclePhase: String = "") {
         self.id = id
         self.name = name
         self.category = category
@@ -64,10 +68,11 @@ struct Workout: Identifiable, Codable, Hashable {
         self.isPinned = isPinned
         self.mode = mode
         self.role = role
+        self.cyclePhase = cyclePhase
     }
 
     private enum CodingKeys: String, CodingKey {
-        case id, name, category, duration, notes, date, muscleIntensity, exercises, isPinned, mode, role
+        case id, name, category, duration, notes, date, muscleIntensity, exercises, isPinned, mode, role, cyclePhase
         /// Written by older versions as steps 1–3 instead of percentages.
         case muscleLevels
     }
@@ -85,6 +90,7 @@ struct Workout: Identifiable, Codable, Hashable {
         isPinned = try c.decodeIfPresent(Bool.self, forKey: .isPinned) ?? false
         mode = try c.decodeIfPresent(String.self, forKey: .mode) ?? ""
         role = try c.decodeIfPresent(String.self, forKey: .role) ?? ""
+        cyclePhase = try c.decodeIfPresent(String.self, forKey: .cyclePhase) ?? ""
 
         if let percent = try c.decodeIfPresent([String: Int].self, forKey: .muscleIntensity) {
             muscleIntensity = percent
@@ -110,6 +116,7 @@ struct Workout: Identifiable, Codable, Hashable {
         try c.encode(isPinned, forKey: .isPinned)
         try c.encode(mode, forKey: .mode)
         try c.encode(role, forKey: .role)
+        try c.encode(cyclePhase, forKey: .cyclePhase)
     }
 
     /// How hard each muscle was worked, 0 (not at all) to 1 (maximum).

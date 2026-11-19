@@ -313,6 +313,9 @@ struct AllRecordsView: View {
                     .listRowBackground(Color.clear)
             }
             ForEach(records) { record in
+                NavigationLink {
+                    ExerciseProgressView(exerciseID: record.exerciseID, title: record.name)
+                } label: {
                 HStack {
                     VStack(alignment: .leading, spacing: 2) {
                         Text(record.name)
@@ -330,6 +333,7 @@ struct AllRecordsView: View {
                     }
                 }
                 .accessibilityElement(children: .combine)
+                }
             }
         }
         .navigationTitle("All Records")
