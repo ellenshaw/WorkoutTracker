@@ -408,8 +408,12 @@ struct BodyModelView: UIViewRepresentable {
                 camera?.bloomIntensity = 0.3
                 camera?.bloomThreshold = 0.6
                 camera?.bloomBlurRadius = 7
-                cameraNode.position = SCNVector3(0, 3.6 + distance * sin(elevation), distance * cos(elevation))
-                cameraNode.eulerAngles = SCNVector3(-elevation, 0, 0)
+                // Split into typed steps: one long mixed-literal expression is too slow for the compiler.
+                let height: Float = 3.6 + distance * sin(elevation)
+                let depth: Float = distance * cos(elevation)
+                let tilt: Float = -elevation
+                cameraNode.position = SCNVector3(x: 0, y: height, z: depth)
+                cameraNode.eulerAngles = SCNVector3(x: tilt, y: 0, z: 0)
                 scene.background.contents = Hologram.crystalBackdrop
             } else {
                 camera?.fieldOfView = 30
