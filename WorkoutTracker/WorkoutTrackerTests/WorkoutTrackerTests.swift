@@ -1024,9 +1024,9 @@ final class WorkoutTrackerTests: XCTestCase {
         cycle.logPeriodStart(daysAgo(8))
         XCTAssertEqual(cycle.phase(), .follicular, "8 days in with no end logged: past the typical 5-day period")
         cycle.endPeriod(on: daysAgo(1))
-        XCTAssertEqual(cycle.phase(on: daysAgo(3)), .menstrual, "period lasted through day 7")
+        XCTAssertEqual(cycle.phase(on: daysAgo(3)), .menstrual, "period lasted through day 8")
         XCTAssertFalse(cycle.hasOpenPeriod)
-        XCTAssertEqual(cycle.averagePeriodLength(), 7)
+        XCTAssertEqual(cycle.averagePeriodLength(), 8, "8 days, counting both the first and last day")
     }
 
     @MainActor
