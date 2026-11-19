@@ -34,8 +34,8 @@ final class WorkoutTrackerTests: XCTestCase {
         let now = Date()
         let w = workout(minutes: 45, muscles: [.chest: 1.0, .calves: 0.35], now: now)
         let heat = HeatCalculator.recoveryHeat(workouts: [w], now: now)
-        XCTAssertEqual(heat[.chest] ?? 0, 1.0 / 1.2, accuracy: 0.001)
-        XCTAssertEqual(heat[.calves] ?? 0, 0.35 / 1.2, accuracy: 0.001)
+        XCTAssertEqual(heat[.chest] ?? 0, 1 - exp(-1.0 / 0.8), accuracy: 0.001)
+        XCTAssertEqual(heat[.calves] ?? 0, 1 - exp(-0.35 / 0.8), accuracy: 0.001)
         XCTAssertNil(heat[.quads])
     }
 
@@ -48,7 +48,7 @@ final class WorkoutTrackerTests: XCTestCase {
         XCTAssertGreaterThan(two, one)
 
         let many = (0..<6).map { workout(minutes: 60, daysAgo: $0, muscles: [.biceps: 1.0], now: now) }
-        XCTAssertEqual(HeatCalculator.recoveryHeat(workouts: many, now: now)[.biceps], 1.0)
+        XCTAssertGreaterThan(HeatCalculator.recoveryHeat(workouts: many, now: now)[.biceps] ?? 0, 0.99)
     }
 
     func testHeatFadesGraduallyInsteadOfDisappearing() {
@@ -63,7 +63,6 @@ final class WorkoutTrackerTests: XCTestCase {
         XCTAssertGreaterThan(fresh, three)
         XCTAssertGreaterThan(three, week)
         XCTAssertGreaterThan(week, 0, "a week-old workout should be faded, not gone")
-        XCTAssertEqual(three / fresh, pow(0.5, 3 / 3.5), accuracy: 0.001)
 
         // A slower fade setting keeps more color.
         let w = workout(minutes: 45, daysAgo: 7, muscles: [.lats: 1.0], now: now)
@@ -736,6 +735,34 @@ final class WorkoutTrackerTests: XCTestCase {
     func testHologramStylesIncludeCrystalFirst() {
         XCTAssertEqual(HologramStyle.allCases.first, .crystal)
         XCTAssertEqual(Set(HologramStyle.allCases.map(\.title)), ["Crystal", "Lines", "Grid"])
+    }
+
+    func testBodyTabAddsUpEveryWorkoutAndKeepsRising() {
+        let now = Date()
+        // Different workouts hitting the same and different muscles.
+        let a = workout(minutes: 45, daysAgo: 0, muscles: [.chest: 1.0, .triceps: 0.65], now: now)
+        let b = workout(minutes: 45, daysAgo: 1, muscles: [.chest: 1.0, .lats: 0.65], now: now)
+        let c = workout(minutes: 45, daysAgo: 2, muscles: [.chest: 1.0, .quads: 1.0], now: now)
+        let d = workout(minutes: 45, daysAgo: 3, muscles: [.chest: 1.0], now: now)
+
+        func heat(_ workouts: [Workout]) -> [MuscleGroup: Double] {
+            HeatCalculator.recoveryHeat(workouts: workouts, now: now)
+        }
+
+        // The chest keeps climbing with every extra session; none of them is ignored or capped away.
+        let counts = (1...4).map { heat(Array([a, b, c, d].prefix($0)))[.chest] ?? 0 }
+        for i in 1..<counts.count {
+            XCTAssertGreaterThan(counts[i], counts[i - 1], "workout \(i + 1) should still raise the chest")
+        }
+        XCTAssertLessThan(counts.last ?? 2, 1.0)
+
+        // Muscles from every workout show up together.
+        let all = heat([a, b, c, d])
+        for muscle in [MuscleGroup.chest, .triceps, .lats, .quads] {
+            XCTAssertNotNil(all[muscle], "\(muscle) from one of the workouts is missing")
+        }
+        // Order doesn't matter.
+        XCTAssertEqual(heat([d, c, b, a])[.chest] ?? 0, all[.chest] ?? 1, accuracy: 1e-9)
     }
 }
 

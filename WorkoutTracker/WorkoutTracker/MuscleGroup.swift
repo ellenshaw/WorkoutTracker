@@ -210,7 +210,8 @@ enum HeatCalculator {
     /// Each workout contributes `intensity × (duration / 45 min)`, with the duration factor
     /// clamped to 0.5…1.5 so one marathon session can't dominate. Its contribution then halves
     /// every `halfLifeDays`, so a muscle's colour cools gradually from red back toward blue as it
-    /// recovers instead of vanishing on a deadline. Repeated sessions stack up to the top of the scale.
+    /// recovers instead of vanishing on a deadline. All workouts in the window are added up per
+    /// muscle, so repeated sessions keep stacking toward the top of the scale.
     static func recoveryHeat(workouts: [Workout],
                              now: Date = Date(),
                              halfLifeDays: Double = 3.5,
@@ -226,8 +227,10 @@ enum HeatCalculator {
                 scores[muscle, default: 0] += intensity * factor * decay
             }
         }
+        // Soft saturation instead of a hard ceiling: every extra session keeps raising the color,
+        // with diminishing returns (a hard session ≈ 0.71, two ≈ 0.92, three ≈ 0.98).
         return scores.compactMapValues { score in
-            score > 0.01 ? min(score / 1.2, 1) : nil
+            score > 0.01 ? 1 - exp(-score / 0.8) : nil
         }
     }
 }
