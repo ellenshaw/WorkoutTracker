@@ -6,7 +6,8 @@
 import SwiftUI
 
 enum StorageKey {
-    static let isLoggedIn = "isLoggedIn"
+    /// Has finished the welcome screen. The stored name is the old "isLoggedIn" so existing installs skip it.
+    static let hasOnboarded = "isLoggedIn"
     static let userName = "userName"
     static let appearance = "appearance"
     static let weightUnit = "weightUnit"

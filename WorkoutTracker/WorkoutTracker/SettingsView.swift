@@ -17,7 +17,7 @@ struct SettingsView: View {
     @AppStorage(StorageKey.fadeHalfLifeDays) private var fadeHalfLife = 3.5
     @AppStorage(StorageKey.weightUnit) private var weightUnit = WeightUnit.kg.rawValue
     @AppStorage(StorageKey.userName) private var userName = ""
-    @AppStorage(StorageKey.isLoggedIn) private var isLoggedIn = false
+    @AppStorage(StorageKey.hasOnboarded) private var hasOnboarded = true
 
     @AppStorage(StorageKey.coachShareHistory) private var coachShare = true
     @AppStorage(StorageKey.coachConsent) private var coachConsent = false
@@ -124,18 +124,18 @@ struct SettingsView: View {
                     Text("Optional, for people who have periods. Stays on this device.")
                 }
 
-                Section("Account") {
+                Section {
                     if !userName.isEmpty {
-                        LabeledContent("Signed in as", value: userName)
+                        LabeledContent("Name", value: userName)
                     }
 
-                    Button("Log out") {
-                        isLoggedIn = false
-                    }
-
-                    Button("Delete account and data", role: .destructive) {
+                    Button("Delete all my data", role: .destructive) {
                         confirmingDelete = true
                     }
+                } header: {
+                    Text("Your data")
+                } footer: {
+                    Text("There is no account. Everything is stored on this iPhone, and this erases all of it.")
                 }
 
                 Section {
@@ -145,7 +145,7 @@ struct SettingsView: View {
                 }
             }
             .navigationTitle("Settings")
-            .alert("Delete account and data?", isPresented: $confirmingDelete) {
+            .alert("Delete all your data?", isPresented: $confirmingDelete) {
                 Button("Delete", role: .destructive) {
                     store.removeAll()
                     plans.removeAll()
@@ -153,11 +153,11 @@ struct SettingsView: View {
                     cycle.removeAll()
                     coachConsent = false
                     userName = ""
-                    isLoggedIn = false
+                    hasOnboarded = false
                 }
                 Button("Cancel", role: .cancel) {}
             } message: {
-                Text("This permanently removes all your workouts from this device.")
+                Text("This permanently erases your workouts, plans, coach conversation, records and cycle log from this iPhone. It can't be undone.")
             }
         }
     }

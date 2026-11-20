@@ -6,22 +6,13 @@
 import SwiftUI
 
 struct ContentView: View {
-    @AppStorage(StorageKey.isLoggedIn) private var isLoggedIn = false
-    @State private var showingRegister = false
+    @AppStorage(StorageKey.hasOnboarded) private var hasOnboarded = false
 
     var body: some View {
-        if isLoggedIn {
+        if hasOnboarded {
             MainTabView()
-        } else if showingRegister {
-            RegisterView(
-                isLoggedIn: $isLoggedIn,
-                showingRegister: $showingRegister
-            )
         } else {
-            LoginView(
-                isLoggedIn: $isLoggedIn,
-                showingRegister: $showingRegister
-            )
+            WelcomeView { hasOnboarded = true }
         }
     }
 }
