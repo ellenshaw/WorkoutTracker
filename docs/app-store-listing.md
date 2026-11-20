@@ -43,11 +43,7 @@ For people who have periods: a gentle reminder that it's fine to lift lighter. S
 
 ## Keywords (100 characters max, comma separated, no spaces after commas)
 
-`workout,gym,lifting,strength,muscle,heatmap,running,pace,planner,coach,pr,1rm,fitness,log,hevy`
-
-(Remove "hevy" or any other app's name: Apple rejects other brands' names in keywords.)
-
-Final version without brand names:
+Don't put other apps' names in keywords: Apple rejects that.
 
 `workout,gym,lifting,strength,muscle,heatmap,running,pace,planner,coach,pr,1rm,fitness,log`
 
